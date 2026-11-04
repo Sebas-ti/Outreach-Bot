@@ -1,0 +1,8 @@
+nombre,apellidos,empresa,cargo,email,linkedin_url,telefono_consentido,escenario_demo
+Contacto,De Prueba,Attack,Candidato POC,tu-correo@example.com,,+573000000000,acepta
+Laura,Gómez Ficticia,Banco Andino Demo,Directora de TI,laura.gomez@example.com,,,
+Andrés,Restrepo Ficticio,Retail Colombia Demo,Gerente de Infraestructura,andres.restrepo@example.com,,,info
+Camila,Torres Ficticia,Universidad Demo,Jefe de Tecnología,camila.torres@example.com,,,referido
+Mateo,Vargas Ficticio,,Consultor independiente,,,,
+Valentina,Ríos Ficticia,Salud Integral Demo,CIO,valentina.rios@example.com,,,no_interesado
+Santiago,López Ficticio,Logística Demo,Director de Operaciones,santiago.lopez@example.com,,,no_contesta

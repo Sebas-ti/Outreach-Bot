@@ -1,0 +1,158 @@
+"""Tools the voice agent can call *during* the conversation (function calling).
+
+Shared by the real Vapi webhook and the mock voice provider, so the scheduling
+logic exercised in the demo is exactly the same code path.
+"""
+import logging
+import re
+from datetime import datetime
+from typing import Any
+
+from .config import Settings
+from .db import Repository
+from .models import Status
+from .providers.calendar import CalendarService
+from .script import follow_up_email, human_dt
+
+log = logging.getLogger(__name__)
+
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[a-zA-Z]{2,}$")
+
+TOOL_SPECS: list[dict[str, Any]] = [
+    {
+        "name": "consultar_disponibilidad",
+        "description": "Consulta los próximos horarios libres del especialista para una reunión virtual de 15 minutos. "
+                       "Úsala cuando la persona acepte reunirse, antes de proponer horarios.",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+        "wait_message": "Un momento, reviso la agenda del especialista.",
+    },
+    {
+        "name": "agendar_reunion",
+        "description": "Agenda la reunión virtual (Google Meet) y envía la invitación de calendario al correo del contacto. "
+                       "Úsala solo cuando la persona haya confirmado horario y correo.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "email": {"type": "string", "description": "Correo confirmado del contacto"},
+                "fecha_hora": {"type": "string", "description": "Inicio en ISO 8601 con zona horaria (ej. 2026-11-05T15:00:00-05:00): uno de los que devolvió consultar_disponibilidad o el que pidió la persona"},
+                "tema": {"type": "string", "description": "Área de interés: dispositivos, infraestructura, servicios o IA"},
+                "cargo": {"type": "string", "description": "Cargo confirmado del contacto"},
+                "celular": {"type": "string", "description": "Celular confirmado por si surge algún cambio"},
+                "notas": {"type": "string", "description": "Resumen del proyecto: qué buscan, etapa, fecha meta y decisores"},
+            },
+            "required": ["email", "fecha_hora", "tema"],
+        },
+        "wait_message": "Perfecto, ya te estoy agendando.",
+    },
+    {
+        "name": "enviar_resumen_correo",
+        "description": "Envía por correo el resumen de lo que hace la marca, cuando la persona no quiere reunión por ahora "
+                       "o pide que le envíen información.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "email": {"type": "string"},
+                "tema_interes": {"type": "string", "description": "Tema que más le interesa, si lo mencionó"},
+            },
+            "required": ["email"],
+        },
+        "wait_message": "Listo, te lo envío.",
+    },
+    {
+        "name": "registrar_referido",
+        "description": "Registra a la persona indicada cuando el contacto dice que no es quien lidera los temas de tecnología.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "nombre": {"type": "string"},
+                "cargo": {"type": "string"},
+                "contacto": {"type": "string", "description": "Correo o teléfono del referido"},
+            },
+            "required": ["nombre"],
+        },
+        "wait_message": "",
+    },
+]
+
+
+class ConversationTools:
+    def __init__(self, repo: Repository, calendar: CalendarService, settings: Settings):
+        self.repo = repo
+        self.calendar = calendar
+        self.s = settings
+
+    async def dispatch(self, name: str, args: dict[str, Any], contact_id: int) -> str:
+        handler = getattr(self, f"tool_{name}", None)
+        if not handler:
+            return f"Herramienta desconocida: {name}"
+        self.repo.log(contact_id, "tool", f"{name}({args})")
+        try:
+            result = await handler(contact_id, **{k: v for k, v in args.items() if v not in (None, "")})
+        except Exception as e:  # never crash the live call: tell the LLM what happened
+            log.exception("tool %s failed", name)
+            self.repo.log(contact_id, "error", f"{name}: {e}")
+            result = "Hubo un problema técnico. Dile a la persona que el equipo le confirmará por correo."
+        self.repo.log(contact_id, "tool", f"{name} -> {result}")
+        return result
+
+    async def tool_consultar_disponibilidad(self, contact_id: int, **_) -> str:
+        slots = await self.calendar.free_slots(3)
+        if not slots:
+            return "No hay horarios libres esta semana. Ofrece que el equipo le escriba por correo para coordinar."
+        opts = "; ".join(f"{human_dt(s)} (fecha_hora={s.isoformat()})" for s in slots)
+        return f"Horarios disponibles: {opts}. Ofrécelos de forma natural, sin leer el formato ISO."
+
+    async def tool_agendar_reunion(self, contact_id: int, email: str, fecha_hora: str, tema: str = "",
+                                   cargo: str = "", celular: str = "", notas: str = "", **_) -> str:
+        c = self.repo.get(contact_id)
+        email = email.strip().lower().replace(" ", "")
+        if not EMAIL_RE.match(email):
+            return f"El correo '{email}' no parece válido. Pide que lo confirme de nuevo, letra por letra."
+        try:
+            start = datetime.fromisoformat(fecha_hora)
+        except ValueError:
+            return "Formato de fecha inválido. Vuelve a llamar consultar_disponibilidad y usa una de esas fechas."
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=self.s.tz)
+        if start <= datetime.now(self.s.tz):
+            return "Ese horario ya pasó (revisa el año). Llama consultar_disponibilidad y ofrece uno de esos horarios."
+        available, why = await self.calendar.is_available(start)
+        if not available:
+            alts = await self.calendar.free_slots(3)
+            opts = "; ".join(f"{human_dt(a)} (fecha_hora={a.isoformat()})" for a in alts)
+            return (f"No se agendó: {why}. Ofrece estas alternativas: {opts}" if alts
+                    else f"No se agendó: {why}. Ofrece que el equipo le escriba por correo para coordinar.")
+
+        summary = f"{self.s.brand_name} x {c.company or c.full_name} – conversación de 15 min ({tema or 'modernización'})"
+        description = (
+            f"Seguimiento {self.s.event_name}.\n\n"
+            f"Contacto: {c.full_name} – {cargo or c.title} – {c.company}\n"
+            f"Correo: {email}\nCelular: {celular or c.phone}\nTema de interés: {tema}\n\n"
+            f"Contexto de la llamada:\n{notas or '-'}\n\n"
+            f"Agendado automáticamente por el asistente virtual de {self.s.company_name}."
+        )
+        booking = await self.calendar.book(email, c.full_name, start, summary, description)
+        q = {**c.qualification, "tema": tema, "notas": notas, "cargo_confirmado": cargo, "celular_confirmado": celular}
+        self.repo.update(contact_id, status=Status.MEETING_BOOKED, email=email, meeting_start=booking.start,
+                         meeting_link=booking.meet_link or booking.html_link, qualification=q)
+        self.repo.log(contact_id, "calendar", f"Reunión agendada {booking.start} · invitación enviada a {email}")
+        return f"Reunión agendada para el {human_dt(start)}; la invitación ya fue enviada a {email}."
+
+    async def tool_enviar_resumen_correo(self, contact_id: int, email: str, tema_interes: str = "", **_) -> str:
+        c = self.repo.get(contact_id)
+        email = email.strip().lower().replace(" ", "")
+        if not EMAIL_RE.match(email):
+            return f"El correo '{email}' no parece válido. Pide que lo confirme."
+        subject, html = follow_up_email(c.first_name, tema_interes, self.s)
+        await self.calendar.send_email(email, subject, html)
+        if self.repo.get(contact_id).status != Status.MEETING_BOOKED:
+            self.repo.update(contact_id, status=Status.FOLLOW_UP_SENT, email=email,
+                             qualification={**c.qualification, "tema": tema_interes})
+        self.repo.log(contact_id, "email", f"Correo de seguimiento enviado a {email}")
+        return f"Correo enviado a {email}."
+
+    async def tool_registrar_referido(self, contact_id: int, nombre: str, cargo: str = "", contacto: str = "", **_) -> str:
+        c = self.repo.get(contact_id)
+        q = {**c.qualification, "referido": {"nombre": nombre, "cargo": cargo, "contacto": contacto}}
+        self.repo.update(contact_id, status=Status.REFERRED, qualification=q)
+        return "Referido registrado. Agradece y cierra la llamada."

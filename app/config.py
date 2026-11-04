@@ -1,0 +1,75 @@
+from functools import lru_cache
+from zoneinfo import ZoneInfo
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+    public_base_url: str = "http://localhost:8000"
+    webhook_secret: str = "dev-secret"
+    database_path: str = "data/bot.db"
+    timezone: str = "America/Bogota"
+
+    # mock | real provider per stage
+    linkedin_provider: str = "mock"  # mock | serpapi
+    enrichment_provider: str = "mock"  # mock | signalhire
+    voice_provider: str = "mock"  # mock | vapi
+    calendar_provider: str = "mock"  # mock | google
+
+    # 1. LinkedIn
+    serpapi_api_key: str = ""
+    linkedin_min_confidence: float = 0.6
+
+    # 2. Enrichment
+    signalhire_api_key: str = ""
+    enrichment_timeout_s: int = 90
+
+    # 3. Voice
+    vapi_api_key: str = ""
+    vapi_phone_number_id: str = ""
+    vapi_model_provider: str = "openai"
+    vapi_model: str = "gpt-4o-mini"
+    vapi_voice_provider: str = "azure"
+    vapi_voice_id: str = "es-CO-SalomeNeural"
+    vapi_voice_model: str = ""  # e.g. eleven_flash_v2_5 (11labs) / sonic-2 (cartesia)
+    vapi_transcriber_model: str = "nova-2"
+    vapi_wait_seconds: float = 0.3
+    call_timeout_s: int = 600
+    mock_call_delay_s: float = 1.5
+
+    # 4. Calendar / email
+    google_credentials_file: str = "secrets/google_client_secret.json"
+    google_token_file: str = "secrets/google_token.json"
+    google_calendar_id: str = "primary"
+    meeting_duration_min: int = 15
+    business_hours_start: int = 9
+    business_hours_end: int = 17
+    booking_url: str = ""
+
+    # Script personalization
+    agent_name: str = "Sofía"
+    company_name: str = "Empresa X"
+    brand_name: str = "Lenovo"
+    event_name: str = "ANDICOM 2026"  # written (emails, calendar)
+    event_name_spoken: str = "Andicom"  # how the voice agent says it
+    sender_title: str = "Ejecutiva de cuenta"
+
+    # Compliance
+    sandbox_mode: bool = True
+    allowed_phone_numbers: str = ""
+    default_country_code: str = "57"
+
+    @property
+    def tz(self) -> ZoneInfo:
+        return ZoneInfo(self.timezone)
+
+    @property
+    def allowed_numbers(self) -> set[str]:
+        return {n.strip() for n in self.allowed_phone_numbers.split(",") if n.strip()}
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

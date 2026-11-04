@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+secrets/*
+!secrets/.gitkeep
+data/*.db
+data/outbox/
+.pytest_cache/
+# personal data used in consented tests (never commit)
+data/mi_prueba.csv
+data/demo_hermano.csv
+data/voces/
+data/voz_prueba.mp3
+data/last_call_*
