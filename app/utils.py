@@ -20,6 +20,20 @@ def decode_csv(raw: bytes) -> str:
         return raw.decode("cp1252")
 
 
+def xlsx_to_csv(raw: bytes) -> str:
+    """First sheet of an Excel workbook -> CSV text (so .xlsx and .csv share one importer)."""
+    import csv
+    import io
+    from openpyxl import load_workbook
+    ws = load_workbook(io.BytesIO(raw), read_only=True, data_only=True).worksheets[0]
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    for row in ws.iter_rows(values_only=True):
+        if any(v not in (None, "") for v in row):
+            w.writerow(["" if v is None else str(v).strip() for v in row])
+    return buf.getvalue()
+
+
 def normalize_url(url: str) -> str:
     """Percent-encode non-ASCII chars (linkedin.com/in/juan-sebastián -> juan-sebasti%C3%A1n)."""
     from urllib.parse import quote, urlsplit, urlunsplit

@@ -270,3 +270,18 @@ def test_signalhire_callback_resolved_by_request_id_or_single_pending(tmp_path, 
 
     entry = asyncio.run(scenario())
     assert entry["status"] == "success"
+
+
+def test_xlsx_import_first_sheet_keeps_plus_and_accents():
+    import io
+    from openpyxl import Workbook
+    from app.utils import xlsx_to_csv
+    wb = Workbook(); ws = wb.active
+    ws.append(["nombre", "apellidos", "telefono_consentido", "resultado_esperado"])
+    ws.append(["José", "Peña", "+573001112233", "ignorada por el bot"])
+    wb.create_sheet("Instrucciones").append(["no se importa"])
+    buf = io.BytesIO(); wb.save(buf)
+    repo = Repository(":memory:")
+    assert repo.import_csv(xlsx_to_csv(buf.getvalue())) == 1
+    c = repo.list()[0]
+    assert (c.first_name, c.last_name, c.consent_phone) == ("José", "Peña", "+573001112233")

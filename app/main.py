@@ -17,7 +17,7 @@ from .providers.calendar import GoogleCalendarService, MockCalendarService
 from .providers.enrichment import MockEnricher, SignalHireEnricher, WaterfallEnricher, enrichment_key
 from .providers.linkedin import MockLinkedInFinder, SerpApiLinkedInFinder
 from .providers.voice import MockVoiceProvider, VapiVoiceProvider, parse_end_of_call
-from .utils import AwaitRegistry, decode_csv
+from .utils import AwaitRegistry, decode_csv, xlsx_to_csv
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("app")
@@ -114,7 +114,8 @@ def create_app(settings: Settings | None = None, repo: Repository | None = None)
 
     @app.post("/api/contacts/import")
     async def import_contacts(request: Request, file: UploadFile = File(...), replace: bool = True):
-        text = decode_csv(await file.read())
+        raw = await file.read()
+        text = xlsx_to_csv(raw) if (file.filename or "").lower().endswith((".xlsx", ".xlsm")) else decode_csv(raw)
         if replace:
             C(request).repo.delete_all()
         try:

@@ -240,7 +240,7 @@ select.inp,input.inp{border:1px solid var(--line);background:var(--panel-2);colo
     <div><h2>Pipeline de contactos</h2><p>Identificación en LinkedIn → enriquecimiento → llamada con agente de voz IA → reunión agendada</p></div>
     <div class="actions">
       <button class="btn" id="sample"><svg class="ico"><use href="#i-db"/></svg>Base de ejemplo</button>
-      <label class="btn"><svg class="ico"><use href="#i-up"/></svg>Importar CSV<input type="file" id="csv" accept=".csv" hidden></label>
+      <label class="btn"><svg class="ico"><use href="#i-up"/></svg>Importar CSV / Excel<input type="file" id="csv" accept=".csv,.xlsx" hidden></label>
       <button class="btn" id="reset"><svg class="ico"><use href="#i-reset"/></svg>Reiniciar</button>
       <button class="btn primary" id="run"><svg class="ico"><use href="#i-play"/></svg>Ejecutar pipeline</button>
     </div>
@@ -305,7 +305,7 @@ select.inp,input.inp{border:1px solid var(--line);background:var(--panel-2);colo
 
 <div class="scrim" id="scrim"></div>
 <aside class="drawer" id="drawer"><div class="dh" id="dh"></div><div class="db" id="db"></div></aside>
-<div class="drop" id="drop">Suelta el CSV para importar los contactos</div>
+<div class="drop" id="drop">Suelta el CSV o Excel para importar los contactos</div>
 <div class="toasts" id="toasts"></div>
 
 <script>
