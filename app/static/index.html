@@ -316,9 +316,12 @@ const STATUS = {
   PENDING:["Pendiente","b-gray"], SEARCHING_LINKEDIN:["Buscando LinkedIn","b-info pulse"], ENRICHING:["Enriqueciendo","b-info pulse"],
   NO_DATA:["Sin datos · siguiente","b-warn"], BLOCKED:["Bloqueado · sin consentimiento","b-bad"], CALLING:["En llamada","b-info pulse"],
   MEETING_BOOKED:["Reunión agendada","b-ok"], FOLLOW_UP_SENT:["Correo enviado","b-vio"], NOT_INTERESTED:["No por ahora","b-bad"],
-  REFERRED:["Referido","b-vio"], NO_ANSWER:["No contestó","b-warn"], CALL_DONE:["Llamada completada","b-warn"], ERROR:["Error","b-bad"] };
+  REFERRED:["Referido","b-vio"], NOT_SERIOUS:["No seria · colgada","b-bad"], NO_ANSWER:["No contestó","b-warn"], CALL_DONE:["Llamada completada","b-warn"], ERROR:["Error","b-bad"] };
 const RESULT = { reunion_agendada:"Reunión agendada", reunion_no_confirmada:"Reunión no confirmada", enviar_informacion:"Pidió información",
-  no_por_ahora:"No por ahora", no_es_la_persona:"No es la persona indicada", no_contactar:"No contactar", llamada_incompleta:"Llamada incompleta" };
+  no_por_ahora:"No por ahora", no_es_la_persona:"No es la persona indicada", no_contactar:"No contactar", llamada_incompleta:"Llamada incompleta",
+  llamada_no_seria:"Llamada no seria" };
+const CLOSE_REASON = { insultos_o_acoso:"Insultos o acoso", broma:"Broma o burla", informacion_falsa:"Información falsa",
+  fuera_de_rol:"Intentó sacar al agente de su rol", otro:"Otro" };
 const STAGE = { linkedin:["in","var(--info)","var(--info-soft)"], enrichment:["phone","var(--violet)","var(--violet-soft)"], call:["call","var(--brand)","var(--brand-soft)"],
   tool:["tool","var(--warn)","var(--warn-soft)"], calendar:["cal","var(--ok)","var(--ok-soft)"], email:["mail","var(--violet)","var(--violet-soft)"],
   compliance:["shield","var(--warn)","var(--warn-soft)"], error:["alert","var(--bad)","var(--bad-soft)"], pipeline:["flow","var(--muted)","var(--panel-2)"], import:["up","var(--muted)","var(--panel-2)"] };
@@ -339,7 +342,7 @@ function steps(c){
   const li = c.linkedin_url ? "done" : s==="SEARCHING_LINKEDIN" ? "active" : s==="PENDING" ? "" : "fail skip";
   const ph = c.phone ? "done" : s==="ENRICHING" ? "active" : s==="NO_DATA" ? "fail" : "";
   const cl = s==="CALLING" ? "active" : s==="BLOCKED" ? "fail" : s==="NO_ANSWER" ? "warn" : c.call_id ? "done" : "";
-  const mt = s==="MEETING_BOOKED" ? "done" : ["FOLLOW_UP_SENT","REFERRED"].includes(s) ? "alt" : ["NOT_INTERESTED","CALL_DONE"].includes(s) ? "warn" : "";
+  const mt = s==="MEETING_BOOKED" ? "done" : ["FOLLOW_UP_SENT","REFERRED"].includes(s) ? "alt" : ["NOT_INTERESTED","CALL_DONE"].includes(s) ? "warn" : s==="NOT_SERIOUS" ? "fail" : "";
   const titles = ["LinkedIn","Celular","Llamada","Reunión"], ids = ["in","phone","call","cal"], st = [li,ph,cl,mt];
   return `<div class="steps">${st.map((v,i)=>`${i?`<span class="ln ${st[i-1].startsWith("done")&&v?"done":""}"></span>`:""}<span class="st ${v}" title="${titles[i]}">${ico(ids[i])}</span>`).join("")}</div>`;
 }
@@ -372,7 +375,7 @@ function renderFunnel(cs){
 function renderTabs(cs){
   const groups = {all:["Todos",()=>true], active:["Activos",c=>["SEARCHING_LINKEDIN","ENRICHING","CALLING","PENDING"].includes(c.status)],
     meet:["Reuniones",c=>c.status==="MEETING_BOOKED"], follow:["Seguimiento",c=>["FOLLOW_UP_SENT","REFERRED","CALL_DONE","NO_ANSWER"].includes(c.status)],
-    skip:["Saltados",c=>["NO_DATA","BLOCKED","NOT_INTERESTED","ERROR"].includes(c.status)]};
+    skip:["Saltados",c=>["NO_DATA","BLOCKED","NOT_INTERESTED","NOT_SERIOUS","ERROR"].includes(c.status)]};
   $("#tabs").innerHTML = Object.entries(groups).map(([k,[l,f]]) => `<button class="tab ${filter===k?"on":""}" data-k="${k}">${l}<span class="c">${cs.filter(f).length}</span></button>`).join("");
   document.querySelectorAll(".tab").forEach(b => b.onclick = () => { filter = b.dataset.k; render(); });
   return groups[filter][1];
@@ -416,9 +419,10 @@ function qualSection(q){
   if (!keys.length) return "";
   const yn = v => v===true?"Sí":v===false?"No":v;
   const LBL = {resultado:"Resultado",tiene_proyecto:"Tiene proyecto",descripcion_proyecto:"Proyecto",etapa:"Etapa",fecha_meta:"Fecha meta",
-    lider_y_decisores:"Decisores",tema_interes:"Tema de interés",tema:"Tema",notas:"Notas",cargo_confirmado:"Cargo confirmado",celular_confirmado:"Celular confirmado"};
+    lider_y_decisores:"Decisores",tema_interes:"Tema de interés",tema:"Tema",notas:"Notas",cargo_confirmado:"Cargo confirmado",celular_confirmado:"Celular confirmado",
+    motivo_cierre:"Motivo del cierre",detalle_cierre:"Qué pasó"};
   const rows = keys.filter(k => !["objeciones","referido"].includes(k)).map(k =>
-    `<dt>${LBL[k]||k.replace(/_/g," ")}</dt><dd>${esc(k==="resultado"?(RESULT[q[k]]||q[k]):yn(q[k]))}</dd>`).join("");
+    `<dt>${LBL[k]||k.replace(/_/g," ")}</dt><dd>${esc(k==="resultado"?(RESULT[q[k]]||q[k]):k==="motivo_cierre"?(CLOSE_REASON[q[k]]||q[k]):yn(q[k]))}</dd>`).join("");
   const obj = (q.objeciones||[]).length ? `<dt>Objeciones</dt><dd><div class="tags">${q.objeciones.map(o=>`<span class="tag">${esc(o)}</span>`).join("")}</div></dd>` : "";
   const ref = q.referido ? `<dt>Referido</dt><dd>${esc(q.referido.nombre)} ${q.referido.cargo?`· ${esc(q.referido.cargo)}`:""} ${q.referido.contacto?`· ${esc(q.referido.contacto)}`:""}</dd>` : "";
   return `<div class="sec"><h4>${ico("star")}Calificación de la llamada</h4><dl class="kv">${rows}${obj}${ref}</dl></div>`;
@@ -521,10 +525,10 @@ function renderAnalytics(cs){
     ${m!=null?`<div class="meter"><span style="width:${m}%"></span></div>`:""}</div>`).join("");
 
   hbars($("#ch-results"), countBy(called, c => c.status, {MEETING_BOOKED:"Reunión agendada",FOLLOW_UP_SENT:"Pidió información",REFERRED:"Refirió a otra persona",
-    NOT_INTERESTED:"No por ahora",NO_ANSWER:"No contestó",CALL_DONE:"Conversó sin agendar",ERROR:"Error"}), v => `${v} contacto${v===1?"":"s"}`);
+    NOT_INTERESTED:"No por ahora",NOT_SERIOUS:"No seria (colgada)",NO_ANSWER:"No contestó",CALL_DONE:"Conversó sin agendar",ERROR:"Error"}), v => `${v} contacto${v===1?"":"s"}`);
   hbars($("#ch-drop"), countBy(cs.filter(c => c.status !== "MEETING_BOOKED"), c => c.status, {NO_DATA:"Sin celular disponible",BLOCKED:"Sin consentimiento (sandbox)",
     NO_ANSWER:"No contestó",NOT_INTERESTED:"No interesado por ahora",FOLLOW_UP_SENT:"Prefirió info por correo",REFERRED:"No era la persona indicada",
-    CALL_DONE:"Conversó sin agendar",ERROR:"Error técnico"}).filter(x => !["PENDING","SEARCHING_LINKEDIN","ENRICHING","CALLING"].includes(x.name)), v => `${v} contacto${v===1?"":"s"}`);
+    NOT_SERIOUS:"Broma, abuso o datos falsos",CALL_DONE:"Conversó sin agendar",ERROR:"Error técnico"}).filter(x => !["PENDING","SEARCHING_LINKEDIN","ENRICHING","CALLING"].includes(x.name)), v => `${v} contacto${v===1?"":"s"}`);
   const TOPIC = {dispositivos:"Dispositivos",infraestructura:"Infraestructura",servicios:"Servicios",ia:"Inteligencia artificial",otro:"Otro"};
   hbars($("#ch-topic"), countBy(answered, c => { const q = c.qualification||{}; const t = String(q.tema_interes || q.tema || "").toLowerCase().trim();
     return t && t !== "ninguno" ? t : null; }, TOPIC), v => `${v} contacto${v===1?"":"s"}`);

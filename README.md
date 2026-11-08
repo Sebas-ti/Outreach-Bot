@@ -9,6 +9,8 @@ Bot que toma una base de contactos (nombre, apellidos, empresa, cargoâ€¦) y,
    configurable), **habla espaÃ±ol, inglÃ©s o portuguÃ©s** (abre en el idioma de la base, con voz de acento nativo
    para contactos de habla inglesa, y solo cambia de idioma si la persona lo pide: un "hello" no basta)
    y menciona lo que la persona **vio en el stand** si la base lo trae.
+   Si la llamada **no es seria** (insultos, bromas, datos evidentemente falsos o intentos de sacarlo de su rol),
+   se despide con cortesía y cuelga para no gastar minutos; si no cuelga, el servidor corta la llamada.
 4. **Agenda** una reuniÃ³n de 15 min en Google Calendar con link de Meet y **envÃ­a la invitaciÃ³n** al correo,
    o envÃ­a el correo de seguimiento del guion si la persona prefiere informaciÃ³n.
 
@@ -37,7 +39,7 @@ copy .env.example .env           # deja todo en mock
 uvicorn app.main:app --reload
 ```
 Abre http://localhost:8000 â†’ **Cargar base de ejemplo** â†’ **â–¶ Ejecutar pipeline**.
-Tests: `pytest` (30 pruebas: scoring LinkedIn, parsing y emparejamiento de SignalHire, cascadas, guarda de cumplimiento, validaciÃ³n de horarios, webhooks, respaldo por consulta a Vapi, persona por gÃ©nero, idiomas, interrupciones, referidos, reintento por contacto, end-to-end).
+Tests: `pytest` (33 pruebas: scoring LinkedIn, parsing y emparejamiento de SignalHire, cascadas, guarda de cumplimiento, validaciÃ³n de horarios, webhooks, respaldo por consulta a Vapi, persona por gÃ©nero, idiomas, interrupciones, referidos, llamadas no serias, reintento por contacto, end-to-end).
 
 ## Modo real (paso a paso)
 
@@ -81,7 +83,7 @@ python scripts/check_setup.py
 ## Base de contactos (CSV o Excel)
 Columnas: `nombre, apellidos, empresa, cargo, email, linkedin_url, telefono_consentido, escenario_demo`, y opcionales `idioma, genero, notas_stand`.
 - `telefono_consentido`: nÃºmero de prueba de alguien que **dio su consentimiento** (tu celular).
-- `escenario_demo`: solo para la voz simulada: `acepta | info | referido | no_interesado | no_contesta`.
+- `escenario_demo`: solo para la voz simulada: `acepta | info | referido | no_interesado | no_contesta | broma`.
 - `idioma`: `es | en | pt` (tambiÃ©n "inglÃ©s", "portuguÃ©s"â€¦). Es el idioma de apertura y elige la voz (`VAPI_VOICE_ID_EN`: acento estadounidense). En la llamada solo cambia si la persona lo pide explÃ­citamente.
 - `genero`: `F | M` (o "mujer"/"hombre"). Si falta, se infiere del primer nombre (lista local + terminaciÃ³n, sin APIs externas); si no se puede, usa el agente por defecto.
 - `notas_stand`: lo que vio o preguntÃ³ en el stand (p. ej. "servidores ThinkSystem para IA"); el agente lo menciona en la apertura, como pide el guion.

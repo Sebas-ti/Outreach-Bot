@@ -1,7 +1,7 @@
 """Orchestrator: one sequential state machine per contact.
 
 PENDING -> SEARCHING_LINKEDIN -> ENRICHING -> (NO_DATA | BLOCKED | CALLING)
-CALLING -> MEETING_BOOKED | FOLLOW_UP_SENT | REFERRED | NOT_INTERESTED | NO_ANSWER | CALL_DONE
+CALLING -> MEETING_BOOKED | FOLLOW_UP_SENT | REFERRED | NOT_INTERESTED | NOT_SERIOUS | NO_ANSWER | CALL_DONE
 
 Any failure in one record is logged and the pipeline moves on to the next one.
 """
@@ -37,12 +37,14 @@ def select_number(c: Contact, enriched_phone: str, s: Settings) -> tuple[str, st
 
 def outcome_status(current: Status, outcome: CallOutcome) -> Status:
     # tools (agendar / correo / referido) already set the definitive status during the call
-    if current in (Status.MEETING_BOOKED, Status.FOLLOW_UP_SENT, Status.REFERRED):
+    if current in (Status.MEETING_BOOKED, Status.FOLLOW_UP_SENT, Status.REFERRED, Status.NOT_SERIOUS):
         return current
     reason = (outcome.ended_reason or "").lower()
     if any(r in reason for r in NO_ANSWER_REASONS):
         return Status.NO_ANSWER
     resultado = (outcome.structured or {}).get("resultado", "")
+    if resultado == "llamada_no_seria":
+        return Status.NOT_SERIOUS
     if resultado in ("no_por_ahora", "no_contactar"):
         return Status.NOT_INTERESTED
     return Status.CALL_DONE

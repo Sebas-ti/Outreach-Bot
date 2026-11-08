@@ -9,10 +9,11 @@ CSV ─► Orquestador Python (FastAPI + SQLite) · máquina de estados por cont
   3. Guarda ────── sandbox: solo se marcan números con consentimiento / lista blanca; túnel verificado antes de marcar
   4. Llamada ───── Vapi: Twilio + Deepgram (STT) + GPT-4o + ElevenLabs (TTS), asistente generado por contacto
                     └ herramientas en vivo: consultar_disponibilidad · agendar_reunion · enviar_resumen_correo · registrar_referido
+                      · terminar_llamada_no_seria (broma/abuso → cuelga; respaldo por control en vivo de Vapi)
   5. Agenda ────── Google Calendar (free/busy + evento con Meet + invitación) · Gmail (correo de seguimiento del guion)
   6. Cierre ────── transcripción, grabación, resumen, calificación estructurada, duración y costo → dashboard y analítica
 ```
-Cada etapa es una interfaz con implementación **real** y **simulada**, configurable en `.env`. Así se prueba por partes, la demo no depende de terceros y cambiar de proveedor toca un solo archivo. 30 pruebas automáticas.
+Cada etapa es una interfaz con implementación **real** y **simulada**, configurable en `.env`. Así se prueba por partes, la demo no depende de terceros y cambiar de proveedor toca un solo archivo. 33 pruebas automáticas.
 
 ## Herramientas y por qué
 | Necesidad | Elección | Por qué |

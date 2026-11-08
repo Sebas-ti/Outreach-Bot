@@ -58,6 +58,30 @@ class Container:
         self.pipeline = Pipeline(self.repo, self.linkedin, self.enricher, self.voice, s)
 
 
+BACKGROUND: set[asyncio.Task] = set()  # keep references so pending hang-up tasks aren't garbage-collected
+
+
+async def end_call_later(c: Container, call: dict, contact_id: int) -> None:
+    """Backstop for prank/abusive calls: give the agent time for its goodbye, then end the call through
+    Vapi's live-control URL if it is still up (the goodbye phrase normally hangs up first)."""
+    await asyncio.sleep(c.s.abuse_hangup_after_s)
+    if not isinstance(c.voice, VapiVoiceProvider) or not call.get("id"):
+        return
+    try:
+        live = await c.voice.fetch_call(call["id"])
+        if live.get("status") == "ended":
+            return
+        url = (live.get("monitor") or call.get("monitor") or {}).get("controlUrl")
+        if not url:
+            log.warning("call %s has no controlUrl; cannot force hang-up", call["id"])
+            return
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(url, json={"type": "end-call"})
+        c.repo.log(contact_id, "call", f"Llamada no seria: colgada por el sistema (HTTP {r.status_code})")
+    except Exception as e:  # never let the backstop crash the server
+        log.warning("forced hang-up of %s failed: %s", call.get("id"), e)
+
+
 def create_app(settings: Settings | None = None, repo: Repository | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -208,6 +232,10 @@ def create_app(settings: Settings | None = None, repo: Repository | None = None)
                     if not str(contact_id or "").isdigit() or not c.repo.get(int(contact_id)):
                         raise LookupError(f"llamada {call.get('id')} sin contacto asociado")
                     result = await c.tools.dispatch(fn.get("name", ""), args, int(contact_id))
+                    if fn.get("name") == "terminar_llamada_no_seria" and result.startswith("Registrado"):
+                        task = asyncio.create_task(end_call_later(c, call, int(contact_id)))
+                        BACKGROUND.add(task)
+                        task.add_done_callback(BACKGROUND.discard)
                 except (LookupError, ValueError) as e:  # never answer 500 to Vapi in the middle of a call
                     log.warning("tool-call %s not dispatched: %s", fn.get("name"), e)
                     result = ("Hubo un problema técnico. Dile a la persona que el equipo le confirmará por correo "

@@ -26,7 +26,7 @@ STRUCTURED_SCHEMA = {
     "properties": {
         "resultado": {"type": "string", "enum": [
             "reunion_agendada", "enviar_informacion", "no_por_ahora", "no_es_la_persona",
-            "no_contactar", "llamada_incompleta"]},
+            "no_contactar", "llamada_incompleta", "llamada_no_seria"]},
         "tiene_proyecto": {"type": "boolean"},
         "descripcion_proyecto": {"type": "string"},
         "etapa": {"type": "string", "enum": ["exploracion", "evaluacion", "ejecucion", "desconocida"]},
@@ -127,6 +127,8 @@ def build_assistant(contact: Contact, s: Settings) -> dict[str, Any]:
         "endCallPhrases": END_CALL_PHRASES,
         "voicemailMessage": voicemail_message(contact, s, persona),
         "maxDurationSeconds": 480,
+        # exposes call.monitor.controlUrl: lets the server end a prank/abusive call if the agent doesn't
+        "monitorPlan": {"controlEnabled": True},
         "silenceTimeoutSeconds": 45,
         "server": server,
         "serverMessages": ["end-of-call-report", "status-update", "tool-calls"],
@@ -283,6 +285,14 @@ class MockVoiceProvider:
             await self.tools.dispatch("enviar_resumen_correo", {"email": email, "tema_interes": "infraestructura"}, c.id)
             structured = {"resultado": "enviar_informacion", "tiene_proyecto": False, "tema_interes": "infraestructura",
                           "objeciones": ["Envíame la información"]}
+        elif sc == "broma":
+            lines += ["User: Jajaja, sí, soy el presidente de la NASA y mi correo es noteimporta.",
+                      "AI: Para no quitarte tiempo, ¿tienen algún proyecto de modernización?",
+                      "User: Sí, una nave a Marte con computadores de papel, jajaja."]
+            await self.tools.dispatch("terminar_llamada_no_seria",
+                                      {"motivo": "broma", "detalle": "Respuestas absurdas y burlas"}, c.id)
+            lines += ["AI: Entiendo, por ahora lo dejamos aquí. Gracias por tu tiempo. ¡Que tengas un excelente día!"]
+            structured = {"resultado": "llamada_no_seria"}
         elif sc == "referido":
             lines += ["User: No soy la persona indicada, eso lo ve Carlos Ruiz, el CIO."]
             await self.tools.dispatch("registrar_referido", {"nombre": "Carlos Ruiz", "cargo": "CIO"}, c.id)

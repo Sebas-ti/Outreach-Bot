@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     # Barge-in: words the person must say before the agent stops (0 = any voice activity, too sensitive to
     # people talking nearby). Interruption phrases ("espera", "wait") still stop it instantly.
     vapi_stop_num_words: int = 2
+    # Prank/abusive calls: after the agent flags it, the server force-ends the call if it is still up
+    abuse_hangup_after_s: float = 12
     vapi_transcriber_model: str = "nova-3"  # nova-3 + multi = Spanish/English/Portuguese in one call
     vapi_multilingual: bool = True  # the agent follows the language the person speaks (es/en/pt)
     vapi_wait_seconds: float = 0.3

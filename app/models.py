@@ -14,6 +14,7 @@ class Status(StrEnum):
     FOLLOW_UP_SENT = "FOLLOW_UP_SENT"
     NOT_INTERESTED = "NOT_INTERESTED"
     REFERRED = "REFERRED"
+    NOT_SERIOUS = "NOT_SERIOUS"  # prank / abuse / evidently false info -> agent hung up early
     NO_ANSWER = "NO_ANSWER"
     CALL_DONE = "CALL_DONE"
     ERROR = "ERROR"
@@ -21,7 +22,7 @@ class Status(StrEnum):
 
 TERMINAL = {
     Status.NO_DATA, Status.BLOCKED, Status.MEETING_BOOKED, Status.FOLLOW_UP_SENT,
-    Status.NOT_INTERESTED, Status.REFERRED, Status.NO_ANSWER, Status.CALL_DONE, Status.ERROR,
+    Status.NOT_INTERESTED, Status.REFERRED, Status.NOT_SERIOUS, Status.NO_ANSWER, Status.CALL_DONE, Status.ERROR,
 }
 
 

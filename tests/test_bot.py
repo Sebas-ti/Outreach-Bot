@@ -426,3 +426,47 @@ def test_language_switch_needs_explicit_request_and_english_gets_native_voice():
     assert agent_persona(contact(first_name="Ana", language="pt"), s).voice_id == "es-m"    # no pt voice -> fallback
     prompt = build_assistant(contact(first_name="Andrés"), s)["model"]["messages"][0]["content"]
     assert '"hello"' in prompt and "SOLO si la persona lo pide" in prompt
+
+
+# ---------------- prank / abusive calls
+def test_not_serious_call_is_flagged_blocks_actions_and_survives_outcome(tmp_path, monkeypatch):
+    from app.conversation import ConversationTools
+    from app.providers.calendar import MockCalendarService
+
+    monkeypatch.chdir(tmp_path)
+    repo = Repository(":memory:")
+    c = repo.add_contact(first_name="Ana", last_name="Uno", company="Acme")
+    cal = MockCalendarService(S.tz, 15, 9, 17, outbox=str(tmp_path / "out"))
+    tools = ConversationTools(repo, cal, S)
+    r = asyncio.run(tools.dispatch("terminar_llamada_no_seria", {"motivo": "broma", "detalle": "NASA de Marte"}, c.id))
+    assert r.startswith("Registrado") and repo.get(c.id).status == Status.NOT_SERIOUS
+    assert repo.get(c.id).qualification["motivo_cierre"] == "broma"
+    slot = asyncio.run(cal.free_slots(1))[0]
+    r = asyncio.run(tools.dispatch("agendar_reunion", {"email": "a@b.co", "fecha_hora": slot.isoformat(), "tema": "ia"}, c.id))
+    assert "no seria" in r and not cal.booked                       # nothing booked after flagging
+    assert outcome_status(Status.NOT_SERIOUS, CallOutcome("x", "assistant-said-end-call-phrase")) == Status.NOT_SERIOUS
+    assert outcome_status(Status.CALLING, CallOutcome("x", structured={"resultado": "llamada_no_seria"})) == Status.NOT_SERIOUS
+
+
+def test_assistant_has_not_serious_tool_prompt_and_live_control():
+    a = build_assistant(contact(), S)
+    assert "terminar_llamada_no_seria" in {t["function"]["name"] for t in a["model"]["tools"]}
+    assert a["monitorPlan"]["controlEnabled"] is True
+    prompt = a["model"]["messages"][0]["content"]
+    assert "LLAMADAS NO SERIAS" in prompt and "Ante la duda" in prompt
+
+
+def test_mock_prank_scenario_end_to_end(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "data").mkdir()
+    repo = Repository(":memory:")
+    with TestClient(create_app(S, repo)) as client:
+        csv = "nombre,apellidos,empresa,email,telefono_consentido,escenario_demo\nBeto,Dos,Acme,b@example.com,3001112233,broma\n"
+        client.post("/api/contacts/import", files={"file": ("c.csv", csv)})
+        client.post("/api/pipeline/run")
+        for _ in range(100):
+            time.sleep(0.05)
+            if not client.get("/api/status").json()["running"]:
+                break
+        beto = client.get("/api/contacts").json()[0]
+    assert beto["status"] == "NOT_SERIOUS" and not beto["meeting_start"]
