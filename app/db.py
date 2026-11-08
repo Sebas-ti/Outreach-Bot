@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .models import Contact, Status
+from .persona import normalize_gender, normalize_language
 from .utils import normalize_url
 
 SCHEMA = """
@@ -25,6 +26,9 @@ CREATE TABLE IF NOT EXISTS contacts (
     phone TEXT DEFAULT '',
     phone_source TEXT DEFAULT '',
     demo_scenario TEXT DEFAULT '',
+    language TEXT DEFAULT '',
+    gender TEXT DEFAULT '',
+    stand_notes TEXT DEFAULT '',
     status TEXT NOT NULL DEFAULT 'PENDING',
     call_id TEXT DEFAULT '',
     call_summary TEXT DEFAULT '',
@@ -58,6 +62,9 @@ CSV_ALIASES = {
     "linkedin_url": ["linkedin_url", "linkedin"],
     "consent_phone": ["telefono_consentido", "consent_phone", "telefono_prueba"],
     "demo_scenario": ["escenario_demo", "demo_scenario"],
+    "language": ["idioma", "language", "lang", "lengua"],
+    "gender": ["genero", "género", "gender", "sexo"],
+    "stand_notes": ["notas_stand", "interes_stand", "interés_stand", "notas", "notes", "stand"],
 }
 
 _CONTACT_FIELDS = {f.name for f in fields(Contact)}
@@ -78,7 +85,8 @@ class Repository:
             self._conn.executescript(SCHEMA)
             cols = {r[1] for r in self._conn.execute("PRAGMA table_info(contacts)")}
             for col, ddl in [("ended_reason", "TEXT DEFAULT ''"), ("call_duration_s", "REAL DEFAULT 0"),
-                             ("call_cost", "REAL DEFAULT 0")]:
+                             ("call_cost", "REAL DEFAULT 0"), ("language", "TEXT DEFAULT ''"),
+                             ("gender", "TEXT DEFAULT ''"), ("stand_notes", "TEXT DEFAULT ''")]:
                 if col not in cols:  # migrate databases created by older versions
                     self._conn.execute(f"ALTER TABLE contacts ADD COLUMN {col} {ddl}")
             self._conn.commit()
@@ -129,6 +137,10 @@ class Repository:
                 continue
             if values.get("linkedin_url"):
                 values["linkedin_url"] = normalize_url(values["linkedin_url"])
+            if "language" in values:
+                values["language"] = normalize_language(values["language"])
+            if "gender" in values:
+                values["gender"] = normalize_gender(values["gender"])
             self.add_contact(**values)
             count += 1
         return count
@@ -179,6 +191,19 @@ class Repository:
             )
             self._conn.execute("DELETE FROM events")
             self._conn.commit()
+
+    def reset_one(self, contact_id: int) -> Contact | None:
+        """Back to PENDING (keeps the contact's input data and any LinkedIn URL that came in the base)."""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE contacts SET linkedin_url='' WHERE id=? AND linkedin_confidence IS NOT NULL", (contact_id,))
+            self._conn.execute(
+                "UPDATE contacts SET status='PENDING', phone='', phone_source='', call_id='', call_summary='', "
+                "transcript='', recording_url='', qualification='{}', meeting_start='', meeting_link='', "
+                "linkedin_confidence=NULL, ended_reason='', call_duration_s=0, call_cost=0, updated_at=? WHERE id=?",
+                (_now(), contact_id))
+            self._conn.commit()
+        return self.get(contact_id)
 
     def delete_all(self) -> None:
         with self._lock:

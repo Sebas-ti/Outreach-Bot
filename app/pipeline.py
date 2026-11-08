@@ -58,11 +58,11 @@ class Pipeline:
     def running(self) -> bool:
         return self._lock.locked()
 
-    async def run(self) -> int:
+    async def run(self, only_ids: set[int] | None = None) -> int:
         if self._lock.locked():
             return 0
         async with self._lock:
-            pending = self.repo.list(Status.PENDING)
+            pending = [c for c in self.repo.list(Status.PENDING) if only_ids is None or c.id in only_ids]
             self.repo.log(None, "pipeline", f"Inicio: {len(pending)} contactos pendientes")
             for c in pending:
                 try:

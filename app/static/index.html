@@ -433,6 +433,7 @@ function chatSection(t){
 }
 async function openDrawer(id){ openId = id; lastDrawerKey = ""; $("#drawer").classList.add("on"); $("#scrim").classList.add("on"); await renderDrawer(true); render(); }
 function closeDrawer(){ openId = null; $("#drawer").classList.remove("on"); $("#scrim").classList.remove("on"); render(); }
+const LANG_NAMES = {es:"español", en:"inglés", pt:"portugués"};
 async function renderDrawer(force){
   const c = state.contacts.find(x => x.id===openId); if (!c) return;
   const evs = await api(`/api/events?contact_id=${c.id}&limit=100`);
@@ -441,8 +442,15 @@ async function renderDrawer(force){
   const [lbl,cls] = STATUS[c.status]||[c.status,"b-gray"];
   $("#dh").innerHTML = `<span class="av" style="background:${color(c)}">${esc(initials(c))}</span><div><h3>${esc(c.first_name)} ${esc(c.last_name)}</h3>
     <p>${esc(c.title||"—")} · ${esc(c.company||"sin empresa")}</p><div style="margin-top:6px"><span class="badge ${cls}">${lbl}</span></div></div>
-    <button class="icon-btn x" id="close">${ico("x")}</button>`;
+    <button class="btn x" id="retry" title="Vuelve a correr solo este contacto (búsqueda, enriquecimiento y llamada) sin tocar el resto del lote">${ico("reset")}Reintentar</button>
+    <button class="icon-btn" id="close">${ico("x")}</button>`;
   $("#close").onclick = closeDrawer;
+  const rb = $("#retry"); rb.disabled = $("#run").disabled || c.status === "PENDING";
+  rb.onclick = async () => {
+    rb.disabled = true;
+    try { await api(`/api/contacts/${c.id}/retry`, {method:"POST"}); toast(`Reintentando a ${c.first_name}`); refresh(); }
+    catch (e) { toast(e.message); rb.disabled = false; }
+  };
   const d = c.meeting_start ? new Date(c.meeting_start) : null;
   const meet = d ? `<div class="sec meetcard"><div class="cal"><div class="mo">${MONTHS[d.getMonth()]}</div><div class="dd">${d.getDate()}</div></div>
      <div style="flex:1"><b>Reunión con especialista · 15 min</b><div style="color:var(--muted);font-size:13px">${esc(fmtDate(c.meeting_start))}</div></div>
@@ -455,6 +463,8 @@ async function renderDrawer(force){
       <dt>Correo</dt><dd>${esc(c.email||"—")}</dd>
       <dt>Celular</dt><dd>${esc(c.phone||"—")} ${c.phone_source?`<span style="color:var(--muted)">· vía ${esc(c.phone_source)}</span>`:""}</dd>
       <dt>LinkedIn</dt><dd>${c.linkedin_url?`<a href="${esc(c.linkedin_url)}" target="_blank" rel="noopener">Ver perfil</a>${c.linkedin_confidence!=null?` <span class="tag">${Math.round(c.linkedin_confidence*100)}% coincidencia</span>`:` <span class="tag">proporcionado</span>`}`:"No encontrado"}</dd>
+      <dt>Agente</dt><dd>${esc(c.agent||"—")} <span style="color:var(--muted)">· voz ${c.agent_gender==="m"?"masculina":"femenina"} · abre en ${esc(LANG_NAMES[c.agent_language]||"español")}</span></dd>
+      ${c.stand_notes?`<dt>Notas del stand</dt><dd>${esc(c.stand_notes)}</dd>`:""}
       ${c.call_id?`<dt>ID de llamada</dt><dd style="font-family:ui-monospace,Consolas,monospace;font-size:12px">${esc(c.call_id)}</dd>`:""}
     </dl></div>
     ${hasRec?`<div class="sec"><h4>${ico("wave")}Grabación</h4><div id="audio-slot"></div></div>`:""}

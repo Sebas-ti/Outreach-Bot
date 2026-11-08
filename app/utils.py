@@ -1,5 +1,6 @@
 import asyncio
 import re
+import time
 import unicodedata
 from typing import Any
 
@@ -69,9 +70,11 @@ class AwaitRegistry:
     Results that arrive before anyone waits are buffered.
     """
 
+    EARLY_TTL_S = 900  # a result nobody waited for in 15 min will never be awaited (e.g. late webhook)
+
     def __init__(self) -> None:
         self._futures: dict[str, asyncio.Future] = {}
-        self._early: dict[str, Any] = {}
+        self._early: dict[str, tuple[float, Any]] = {}
         self.aliases: dict[str, str] = {}  # e.g. "shreq:1748" -> "sh:li:juan-perez"
 
     def is_pending(self, key: str) -> bool:
@@ -84,7 +87,7 @@ class AwaitRegistry:
         if key not in self._futures:
             self._futures[key] = asyncio.get_running_loop().create_future()
         if key in self._early:
-            self._futures[key].set_result(self._early.pop(key))
+            self._futures[key].set_result(self._early.pop(key)[1])
 
     async def wait(self, key: str, timeout: float) -> Any:
         self.expect(key)
@@ -92,11 +95,22 @@ class AwaitRegistry:
             return await asyncio.wait_for(self._futures[key], timeout)
         finally:
             self._futures.pop(key, None)
+            self.drop_aliases(key)
+
+    def drop_aliases(self, target: str) -> None:
+        for alias in [a for a, t in self.aliases.items() if t == target]:
+            self.aliases.pop(alias, None)
 
     def resolve(self, key: str, value: Any) -> bool:
+        self._prune()
         fut = self._futures.get(key)
         if fut and not fut.done():
             fut.set_result(value)
             return True
-        self._early[key] = value
+        self._early[key] = (time.monotonic(), value)
         return False
+
+    def _prune(self) -> None:
+        cutoff = time.monotonic() - self.EARLY_TTL_S
+        for k in [k for k, (ts, _) in self._early.items() if ts < cutoff]:
+            self._early.pop(k, None)

@@ -11,6 +11,7 @@ from typing import Any
 from .config import Settings
 from .db import Repository
 from .models import Status
+from .persona import agent_persona
 from .providers.calendar import CalendarService
 from .script import follow_up_email, human_dt
 
@@ -24,7 +25,6 @@ TOOL_SPECS: list[dict[str, Any]] = [
         "description": "Consulta los próximos horarios libres del especialista para una reunión virtual de 15 minutos. "
                        "Úsala cuando la persona acepte reunirse, antes de proponer horarios.",
         "parameters": {"type": "object", "properties": {}, "required": []},
-        "wait_message": "Un momento, reviso la agenda del especialista.",
     },
     {
         "name": "agendar_reunion",
@@ -42,7 +42,6 @@ TOOL_SPECS: list[dict[str, Any]] = [
             },
             "required": ["email", "fecha_hora", "tema"],
         },
-        "wait_message": "Perfecto, ya te estoy agendando.",
     },
     {
         "name": "enviar_resumen_correo",
@@ -56,7 +55,6 @@ TOOL_SPECS: list[dict[str, Any]] = [
             },
             "required": ["email"],
         },
-        "wait_message": "Listo, te lo envío.",
     },
     {
         "name": "registrar_referido",
@@ -70,7 +68,6 @@ TOOL_SPECS: list[dict[str, Any]] = [
             },
             "required": ["nombre"],
         },
-        "wait_message": "",
     },
 ]
 
@@ -133,8 +130,12 @@ class ConversationTools:
         )
         booking = await self.calendar.book(email, c.full_name, start, summary, description)
         q = {**c.qualification, "tema": tema, "notas": notas, "cargo_confirmado": cargo, "celular_confirmado": celular}
+        updates = {}
+        if cargo and cargo.strip().lower() != (c.title or "").strip().lower():
+            updates["title"] = cargo.strip()  # Word: confirm title at closing -> keep the record current
+            self.repo.log(contact_id, "call", f"Cargo actualizado: '{c.title or '-'}' → '{cargo.strip()}'")
         self.repo.update(contact_id, status=Status.MEETING_BOOKED, email=email, meeting_start=booking.start,
-                         meeting_link=booking.meet_link or booking.html_link, qualification=q)
+                         meeting_link=booking.meet_link or booking.html_link, qualification=q, **updates)
         self.repo.log(contact_id, "calendar", f"Reunión agendada {booking.start} · invitación enviada a {email}")
         return f"Reunión agendada para el {human_dt(start)}; la invitación ya fue enviada a {email}."
 
@@ -143,7 +144,7 @@ class ConversationTools:
         email = email.strip().lower().replace(" ", "")
         if not EMAIL_RE.match(email):
             return f"El correo '{email}' no parece válido. Pide que lo confirme."
-        subject, html = follow_up_email(c.first_name, tema_interes, self.s)
+        subject, html = follow_up_email(c.first_name, tema_interes, self.s, agent_persona(c, self.s))
         await self.calendar.send_email(email, subject, html)
         if self.repo.get(contact_id).status != Status.MEETING_BOOKED:
             self.repo.update(contact_id, status=Status.FOLLOW_UP_SENT, email=email,
@@ -153,6 +154,30 @@ class ConversationTools:
 
     async def tool_registrar_referido(self, contact_id: int, nombre: str, cargo: str = "", contacto: str = "", **_) -> str:
         c = self.repo.get(contact_id)
-        q = {**c.qualification, "referido": {"nombre": nombre, "cargo": cargo, "contacto": contacto}}
+        new_id = self._create_referral(c, nombre, cargo, contacto)
+        q = {**c.qualification, "referido": {"nombre": nombre, "cargo": cargo, "contacto": contacto,
+                                             "contact_id": new_id}}
         self.repo.update(contact_id, status=Status.REFERRED, qualification=q)
         return "Referido registrado. Agradece y cierra la llamada."
+
+    def _create_referral(self, c, nombre: str, cargo: str, contacto: str) -> int | None:
+        """The referral becomes a new PENDING record (same company) so the next run finds + calls them.
+        Their phone is NOT used as consent: in sandbox they stay BLOCKED until someone registers consent."""
+        parts = nombre.strip().split()
+        if not parts:
+            return None
+        first, last = parts[0], " ".join(parts[1:])
+        for other in self.repo.list():
+            if (other.first_name.lower(), other.last_name.lower(), other.company.lower()) == \
+                    (first.lower(), last.lower(), (c.company or "").lower()):
+                self.repo.log(c.id, "referral", f"{nombre} ya estaba en la base (#{other.id})")
+                return other.id
+        email = contacto.strip().lower() if EMAIL_RE.match(contacto.strip()) else ""
+        notes = f"Referido por {c.full_name} ({c.title or 'contacto'}) en la llamada de seguimiento."
+        if contacto and not email:
+            notes += f" Contacto que dio: {contacto}."
+        new = self.repo.add_contact(first_name=first, last_name=last, company=c.company, title=cargo, email=email,
+                                    language=c.language, stand_notes=notes)
+        self.repo.log(new.id, "referral", f"Nuevo contacto referido por {c.full_name}: {nombre} ({cargo or 'sin cargo'})")
+        self.repo.log(c.id, "referral", f"Referido {nombre} agregado a la base como #{new.id} (pendiente)")
+        return new.id

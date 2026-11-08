@@ -34,7 +34,9 @@ class Settings(BaseSettings):
     vapi_voice_provider: str = "azure"
     vapi_voice_id: str = "es-CO-SalomeNeural"
     vapi_voice_model: str = ""  # e.g. eleven_flash_v2_5 (11labs) / sonic-2 (cartesia)
-    vapi_transcriber_model: str = "nova-2"
+    vapi_voice_id_male: str = ""  # voice for the male persona (empty -> same voice as VAPI_VOICE_ID)
+    vapi_transcriber_model: str = "nova-3"  # nova-3 + multi = Spanish/English/Portuguese in one call
+    vapi_multilingual: bool = True  # the agent follows the language the person speaks (es/en/pt)
     vapi_wait_seconds: float = 0.3
     call_timeout_s: int = 600
     mock_call_delay_s: float = 1.5
@@ -49,12 +51,19 @@ class Settings(BaseSettings):
     booking_url: str = ""
 
     # Script personalization
-    agent_name: str = "Sofía"
+    agent_name: str = "Sofía"  # female persona
+    agent_name_male: str = "Daniel"  # male persona
+    agent_gender_mode: str = "opposite"  # opposite (man->female agent, woman->male agent) | female | male
+    agent_default_gender: str = "f"  # when the contact's gender can't be determined
+    default_language: str = "es"  # opening language when the CSV has no 'idioma' column (es | en | pt)
     company_name: str = "Empresa X"
     brand_name: str = "Lenovo"
     event_name: str = "ANDICOM 2026"  # written (emails, calendar)
     event_name_spoken: str = "Andicom"  # how the voice agent says it
     sender_title: str = "Ejecutiva de cuenta"
+    sender_title_male: str = "Ejecutivo de cuenta"
+    sender_phone: str = ""  # signature of the follow-up email (Word: [Teléfono] · [Correo])
+    sender_email: str = ""
 
     # Compliance
     sandbox_mode: bool = True

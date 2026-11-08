@@ -1,9 +1,11 @@
 """Call script (from the client's Word 'SPEECH ... ANDICOM') turned into an LLM system prompt,
 plus the follow-up email template. Kept in one place so the business can tweak it."""
+import html
 from datetime import datetime
 
 from .config import Settings
 from .models import Contact
+from .persona import CLOSING, LANGUAGES, Persona, agent_persona, first_message  # noqa: F401 (re-export)
 
 DAYS = ["lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo"]
 MONTHS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto",
@@ -34,41 +36,77 @@ def human_dt(dt: datetime) -> str:
     return f"{DAYS[dt.weekday()]} {day} de {MONTHS[dt.month - 1]} {hour}{minutes} {period}"
 
 
-LETTERS = {"a": "a", "b": "be", "c": "ce", "d": "de", "e": "e", "f": "efe", "g": "ge", "h": "hache", "i": "i",
+LETTERS_ES = {"a": "a", "b": "be", "c": "ce", "d": "de", "e": "e", "f": "efe", "g": "ge", "h": "hache", "i": "i",
            "j": "jota", "k": "ka", "l": "ele", "m": "eme", "n": "ene", "ñ": "eñe", "o": "o", "p": "pe", "q": "cu",
            "r": "erre", "s": "ese", "t": "te", "u": "u", "v": "uve", "w": "doble uve", "x": "equis", "y": "ye", "z": "zeta"}
-SYMBOLS = {"@": "arroba", ".": "punto", "_": "guion bajo", "-": "guion", "+": "más"}
-DIGITS = "cero uno dos tres cuatro cinco seis siete ocho nueve".split()
+LETTERS_PT = {"a": "a", "b": "bê", "c": "cê", "d": "dê", "e": "é", "f": "efe", "g": "gê", "h": "agá", "i": "i",
+              "j": "jota", "k": "cá", "l": "ele", "m": "eme", "n": "ene", "o": "ó", "p": "pê", "q": "quê", "r": "erre",
+              "s": "esse", "t": "tê", "u": "u", "v": "vê", "w": "dáblio", "x": "xis", "y": "ípsilon", "z": "zê"}
+SPOKEN = {
+    "es": (LETTERS_ES, {"@": "arroba", ".": "punto", "_": "guion bajo", "-": "guion", "+": "más"},
+           "cero uno dos tres cuatro cinco seis siete ocho nueve".split()),
+    "en": ({}, {"@": "at", ".": "dot", "_": "underscore", "-": "dash", "+": "plus"},
+           "zero one two three four five six seven eight nine".split()),
+    "pt": (LETTERS_PT, {"@": "arroba", ".": "ponto", "_": "underline", "-": "hífen", "+": "mais"},
+           "zero um dois três quatro cinco seis sete oito nove".split()),
+}
 
 
-def spoken_email(email: str) -> str:
+def spoken_email(email: str, lang: str = "es") -> str:
     """'laura123@gmail.com' -> 'laura, uno, dos, tres, arroba, gmail, punto, com' (what the TTS must say)."""
     import re
+    letters, symbols, digits = SPOKEN.get(lang, SPOKEN["es"])
     out = []
     for tok in re.findall(r"[a-zA-ZñÑáéíóú]+|\d|[@._+\-]", (email or "").lower()):
         if tok.isdigit():
-            out.append(DIGITS[int(tok)])
-        elif tok in SYMBOLS:
-            out.append(SYMBOLS[tok])
+            out.append(digits[int(tok)])
+        elif tok in symbols:
+            out.append(symbols[tok])
         elif len(tok) <= 2 or not re.search(r"[aeiouáéíóú]", tok):
-            out.append(" ".join(LETTERS.get(ch, ch) for ch in tok))  # 'jd' -> 'jota de'
+            out.append(" ".join(letters.get(ch, ch.upper()) for ch in tok))  # 'jd' -> 'jota de'
         else:
             out.append(tok)  # pronounceable word: 'laura', 'gmail'
     return ", ".join(out)
 
 
-def first_message(c: Contact, s: Settings) -> str:
-    return (f"Hola, ¿hablo con {c.first_name}? Soy {s.agent_name}, asistente virtual del equipo que "
-            f"apoya a {s.company_name}. Te contacto porque estuviste con nosotros en {s.event_name_spoken}. "
-            f"¿Tienes un par de minutos?")
+def _persona_block(c: Contact, p: Persona) -> str:
+    agent = ('Eres MUJER: usa concordancia femenina al hablar de ti ("encantada", "estoy atenta").'
+             if p.is_female else
+             'Eres HOMBRE: usa concordancia masculina al hablar de ti ("encantado", "estoy atento").')
+    person = {"f": f'{c.first_name} es mujer: dirígete a ella en femenino ("bienvenida", "interesada").',
+              "m": f'{c.first_name} es hombre: dirígete a él en masculino ("bienvenido", "interesado").'}.get(
+        p.contact_gender, f"No sabes el género de {c.first_name}: usa formas neutras.")
+    return f"{agent}\n{person}"
 
 
-def system_prompt(c: Contact, s: Settings, now: datetime) -> str:
+def _language_block(c: Contact, s: Settings, p: Persona) -> str:
+    opening = LANGUAGES.get(p.language, "español")
+    if not s.vapi_multilingual:
+        return f"IDIOMA: habla siempre en {opening}."
+    email_en = spoken_email(c.email, "en") if c.email else "-"
+    email_pt = spoken_email(c.email, "pt") if c.email else "-"
+    return f"""IDIOMA: abriste la llamada en {opening}. Hablas español, inglés y portugués.
+- Responde SIEMPRE en el idioma en que te habla la persona. Si cambia de idioma o te lo pide, cambia de inmediato
+  y quédate en ese idioma el resto de la llamada. No mezcles idiomas en una misma frase.
+- Este guion está escrito en español: tradúcelo con naturalidad (en inglés usa "you"; en portugués usa "você").
+- Las reglas de números también aplican: en inglés "ten thirty in the morning", en portugués "dez e meia da manhã".
+- Correo deletreado en inglés: "{email_en}"; en portugués: "{email_pt}".
+- Despedida obligatoria según el idioma: español "{CLOSING['es']}", inglés "{CLOSING['en']}",
+  portugués "{CLOSING['pt']}". La llamada se cuelga sola al decirla."""
+
+
+def system_prompt(c: Contact, s: Settings, now: datetime, p: Persona | None = None) -> str:
+    p = p or agent_persona(c, s)
+    stand = (f'\nEN EL STAND: {c.stand_notes}. Menciónalo con naturalidad en la apertura (por ejemplo: "vi que te '
+             f'interesó...") para que la persona sienta que la recordamos.' if c.stand_notes else "")
     return f"""
-Eres {s.agent_name}, asistente virtual de voz del equipo que apoya a {s.company_name}, aliado de {s.brand_name}.
-Estás llamando a {c.full_name}, {c.title or 'contacto'} en {c.company or 'su organización'}, que visitó el stand en {s.event_name_spoken}.
+Eres {p.name}, asistente virtual de voz del equipo que apoya a {s.company_name}, aliado de {s.brand_name}.
+{_persona_block(c, p)}
+Estás llamando a {c.full_name}, {c.title or 'contacto'} en {c.company or 'su organización'}, que visitó el stand en {s.event_name_spoken}.{stand}
 Fecha y hora actual: {human_dt(now)} (zona {s.timezone}). En formato ISO hoy es {now.date().isoformat()}; usa SIEMPRE
 este año ({now.year}) o posterior al construir fechas para las herramientas.
+
+{_language_block(c, s, p)}
 
 OBJETIVO: entender si su organización tiene un proyecto de modernización tecnológica en los próximos seis a doce meses
 y, si encaja, agendar una conversación de quince minutos con un especialista de {s.brand_name}.
@@ -79,7 +117,9 @@ ESTILO
 - TODO lo que escribas se convierte en voz: escribe números, fechas y horas SIEMPRE en palabras en español
   ("diez y media de la mañana", "quince minutos"), nunca dígitos, símbolos, viñetas, emojis ni palabras en inglés.
   El evento se dice "{s.event_name_spoken}" y la marca "{s.brand_name}". Nunca leas fechas en formato ISO.
-- Una sola pregunta por turno. Escucha y no interrumpas. Nunca leas listas largas.
+- Una sola pregunta por turno y frases CORTAS (máximo veinticinco palabras por turno): si la persona habla
+  mientras tú hablas, cállate y escúchala. Nunca leas listas largas.
+- Si la persona te interrumpe, NO repitas lo que estabas diciendo: responde a lo que dijo.
 - Si preguntan, confirma con honestidad que eres un asistente virtual con inteligencia artificial.
 - No inventes precios, productos ni datos. Si no sabes algo, dilo y ofrece que el especialista lo resuelva.
 - Si la persona pide no ser contactada de nuevo, discúlpate, confirma que no volveremos a llamar y termina la llamada.
@@ -103,8 +143,10 @@ GUION
      ("uno, dos, tres"), "arroba" por @ y "punto" por el punto. En la herramienta usa el correo normal (con @ y puntos).
      Pregunta también su cargo y un celular por si surge algún cambio.
    - Llama a `agendar_reunion` con el horario EXACTO (fecha_hora en formato ISO tal como lo devolvió
-     consultar_disponibilidad) y un resumen de lo que contó en `notas`.
-   - Cierra: "Listo, {c.first_name}. Te llega la invitación hoy mismo. Gracias por tu tiempo y por acompañarnos en {s.event_name_spoken}. ¡Que tengas un excelente día!"
+     consultar_disponibilidad), el cargo y el celular que confirmó, y un resumen de lo que contó en `notas`.
+   - Cuando la herramienta confirme, SIEMPRE di la confirmación con el día y la hora antes de despedirte:
+     "Listo, {c.first_name}, quedó agendada para el [día y hora en palabras]. Te llega la invitación con el enlace
+     de Meet a tu correo. Gracias por tu tiempo y por acompañarnos en {s.event_name_spoken}. ¡Que tengas un excelente día!"
 
 4. SI LA RESPUESTA ES NO (por ahora):
    - "Entiendo. ¿Hay algún tema que estén empezando a contemplar, aunque sea a más largo plazo?"
@@ -135,18 +177,24 @@ REGLA DE PRIORIDAD: si la persona mostró interés o tiene un proyecto, el objet
   y si puede compartir su contacto; registra con `registrar_referido`.
 
 CIERRE DE LA LLAMADA: cuando la conversación termine, despídete en UNA sola frase que termine exactamente con
-"¡Que tengas un excelente día!" y finaliza la llamada de inmediato. No esperes a que la persona se despida ni
-agregues nada después.
+"{CLOSING['es']}" (o su versión en el idioma de la llamada). La llamada se cuelga sola al decir esa frase, así que
+NUNCA la digas antes de haber confirmado en voz alta lo que se agendó o envió. No agregues nada después.
 """.strip()
 
 
-def follow_up_email(name: str, topic: str, s: Settings) -> tuple[str, str]:
+def follow_up_email(name: str, topic: str, s: Settings, p: Persona | None = None) -> tuple[str, str]:
+    """Word template. `name`/`topic` come from the CSV and the LLM -> always HTML-escaped."""
+    name, topic = html.escape(name or ""), html.escape(topic or "")
+    agent = p.name if p else s.agent_name
+    title = s.sender_title_male if (p and not p.is_female) else s.sender_title
     subject = f"Gracias por acompañarnos en {s.event_name} – {s.company_name}"
-    booking = (f'<a href="{s.booking_url}">Agendar conversación</a>' if s.booking_url
+    booking = (f'<a href="{html.escape(s.booking_url, quote=True)}">Agendar conversación</a>' if s.booking_url
                else "respondiendo este correo")
     topic_line = (f"<p>Como nos comentaste tu interés en <b>{topic}</b>, te conectaremos con el especialista de "
                   f"{s.brand_name} en ese tema.</p>") if topic else ""
-    html = f"""
+    contact_line = " · ".join(html.escape(x) for x in (s.sender_phone, s.sender_email) if x)
+    signature = f"{agent} – {title}, equipo {s.company_name}" + (f"<br>{contact_line}" if contact_line else "")
+    body = f"""
 <p>Hola, {name}:</p>
 <p>Gracias por visitarnos en {s.event_name}. En {s.brand_name} estamos acompañando a empresas e instituciones en
 proyectos de transformación tecnológica que integran dispositivos, infraestructura, servicios e inteligencia artificial.</p>
@@ -155,6 +203,6 @@ proyectos de transformación tecnológica que integran dispositivos, infraestruc
 meses, nos encantaría coordinar una conversación de 15 minutos con el especialista de {s.brand_name} más relacionado
 con ese tema.</p>
 <p>Puedes reservar aquí: {booking} o responderme con el tema y el horario que prefieras.</p>
-<p>Saludos,<br>{s.agent_name} – {s.sender_title}, equipo {s.company_name}</p>
+<p>Saludos,<br>{signature}</p>
 """.strip()
-    return subject, html
+    return subject, body

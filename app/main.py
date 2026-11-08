@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from .config import Settings, get_settings
 from .conversation import ConversationTools
 from .db import Repository
+from .persona import agent_persona
 from .pipeline import Pipeline, mask
 from .providers.calendar import GoogleCalendarService, MockCalendarService
 from .providers.enrichment import MockEnricher, SignalHireEnricher, WaterfallEnricher, enrichment_key
@@ -91,6 +92,8 @@ def create_app(settings: Settings | None = None, repo: Repository | None = None)
             d = asdict(c)
             d["phone"] = mask(c.phone)
             d["consent_phone"] = mask(c.consent_phone)
+            p = agent_persona(c, C(request).s)
+            d.update(agent=p.name, agent_gender=p.gender, agent_language=p.language)
             out.append(d)
         return out
 
@@ -141,6 +144,20 @@ def create_app(settings: Settings | None = None, repo: Repository | None = None)
         asyncio.create_task(c.pipeline.run())
         return {"started": True}
 
+    @app.post("/api/contacts/{contact_id}/retry")
+    async def retry_contact(request: Request, contact_id: int):
+        """Re-run ONE contact (e.g. the demo call failed) without touching the rest of the batch."""
+        c = C(request)
+        if c.pipeline.running:
+            raise HTTPException(409, "Hay un lote en ejecución; espera a que termine")
+        contact = c.repo.get(contact_id)
+        if not contact:
+            raise HTTPException(404, "Contacto no encontrado")
+        c.repo.reset_one(contact_id)
+        c.repo.log(contact_id, "pipeline", f"Reintento manual de {contact.full_name}")
+        asyncio.create_task(c.pipeline.run({contact_id}))
+        return {"started": True}
+
     @app.post("/api/contacts/reset")
     async def reset(request: Request):
         C(request).repo.reset_all()
@@ -184,10 +201,17 @@ def create_app(settings: Settings | None = None, repo: Repository | None = None)
             results = []
             for tc in msg.get("toolCallList") or msg.get("toolCalls") or []:
                 fn = tc.get("function", {})
-                args = fn.get("arguments") or {}
-                if isinstance(args, str):
-                    args = json.loads(args or "{}")
-                result = await c.tools.dispatch(fn.get("name", ""), args, int(contact_id))
+                try:
+                    args = fn.get("arguments") or {}
+                    if isinstance(args, str):
+                        args = json.loads(args or "{}")
+                    if not str(contact_id or "").isdigit() or not c.repo.get(int(contact_id)):
+                        raise LookupError(f"llamada {call.get('id')} sin contacto asociado")
+                    result = await c.tools.dispatch(fn.get("name", ""), args, int(contact_id))
+                except (LookupError, ValueError) as e:  # never answer 500 to Vapi in the middle of a call
+                    log.warning("tool-call %s not dispatched: %s", fn.get("name"), e)
+                    result = ("Hubo un problema técnico. Dile a la persona que el equipo le confirmará por correo "
+                              "y no confirmes nada.")
                 results.append({"toolCallId": tc.get("id"), "result": result})
             return {"results": results}
 

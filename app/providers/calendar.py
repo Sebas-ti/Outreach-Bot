@@ -2,7 +2,7 @@
 import asyncio
 import base64
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
 from pathlib import Path
 from typing import Protocol
@@ -87,10 +87,9 @@ class GoogleCalendarService:
             raise FileNotFoundError(
                 f"No existe {token_file}. Ejecuta: python scripts/google_auth.py"
             )
-        creds = Credentials.from_authorized_user_file(token_file, SCOPES)
-        if creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-            Path(token_file).write_text(creds.to_json())
+        self._request_cls, self._token_file = Request, token_file
+        self.creds = creds = Credentials.from_authorized_user_file(token_file, SCOPES)
+        self._ensure_fresh()
         self.cal = build("calendar", "v3", credentials=creds, cache_discovery=False)
         self.gmail = build("gmail", "v1", credentials=creds, cache_discovery=False)
         self.calendar_id = calendar_id
@@ -98,7 +97,17 @@ class GoogleCalendarService:
         self.duration = timedelta(minutes=duration_min)
         self.start_h, self.end_h = start_h, end_h
 
+    def _ensure_fresh(self) -> None:
+        """Access tokens last ~1 h: the server may run longer than that before the demo. Refresh proactively
+        (5 min margin) and persist, so a restart doesn't start from an expired token either."""
+        c = self.creds
+        if c.refresh_token and (not c.valid or (c.expiry and c.expiry - datetime.now(timezone.utc).replace(tzinfo=None) < timedelta(minutes=5))):
+            c.refresh(self._request_cls())
+            Path(self._token_file).write_text(c.to_json())
+            log.info("Google OAuth token refreshed")
+
     def _busy(self, start: datetime, end: datetime) -> list[tuple[datetime, datetime]]:
+        self._ensure_fresh()
         res = self.cal.freebusy().query(body={
             "timeMin": start.isoformat(), "timeMax": end.isoformat(),
             "timeZone": str(self.tz), "items": [{"id": self.calendar_id}],
@@ -125,6 +134,7 @@ class GoogleCalendarService:
         return True, ""
 
     def _insert(self, body: dict) -> dict:
+        self._ensure_fresh()
         return self.cal.events().insert(
             calendarId=self.calendar_id, body=body, conferenceDataVersion=1, sendUpdates="all"
         ).execute()
@@ -148,6 +158,7 @@ class GoogleCalendarService:
                        meet_link=ev.get("hangoutLink", ""), html_link=ev.get("htmlLink", ""))
 
     def _send(self, to: str, subject: str, html: str) -> dict:
+        self._ensure_fresh()
         msg = MIMEText(html, "html", "utf-8")
         msg["to"], msg["subject"] = to, subject
         raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
@@ -171,7 +182,8 @@ class MockCalendarService:
 
     async def free_slots(self, n: int = 3) -> list[datetime]:
         slots = candidate_slots(datetime.now(self.tz), self.tz, self.duration_min, self.start_h, self.end_h)
-        return pick_spread(slots, n)
+        taken = {datetime.fromisoformat(b.start) for b in self.booked}
+        return pick_spread([s for s in slots if s not in taken], n)
 
     async def is_available(self, start: datetime) -> tuple[bool, str]:
         ok, why = within_business_hours(start, self.tz, self.duration_min, self.start_h, self.end_h)

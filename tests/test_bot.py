@@ -285,3 +285,130 @@ def test_xlsx_import_first_sheet_keeps_plus_and_accents():
     assert repo.import_csv(xlsx_to_csv(buf.getvalue())) == 1
     c = repo.list()[0]
     assert (c.first_name, c.last_name, c.consent_phone) == ("José", "Peña", "+573001112233")
+
+
+# ---------------- persona: gender, language, barge-in
+def test_gender_inference_and_opposite_agent():
+    from app.persona import agent_persona, infer_gender
+    assert infer_gender("María José") == "f" and infer_gender("José María") == "m"
+    assert infer_gender("Andrés Felipe") == "m" and infer_gender("Isabel") == "f" and infer_gender("Kim") == ""
+    s = Settings(_env_file=None, vapi_voice_id="voz-f", vapi_voice_id_male="voz-m")
+    man, woman, unknown = (agent_persona(contact(first_name=n), s) for n in ("Andrés", "Laura", "Kim"))
+    assert (man.name, man.gender, man.voice_id) == ("Sofía", "f", "voz-f")
+    assert (woman.name, woman.gender, woman.voice_id) == ("Daniel", "m", "voz-m")
+    assert unknown.gender == "f"  # default
+    assert agent_persona(contact(first_name="Laura", gender="hombre"), s).gender == "f"  # CSV column wins
+    assert agent_persona(contact(first_name="Laura"), Settings(_env_file=None, agent_gender_mode="female")).gender == "f"
+
+
+def test_assistant_barge_in_multilingual_and_persona():
+    a = build_assistant(contact(first_name="Laura"), S)
+    assert a["firstMessageInterruptionsEnabled"] is True
+    assert "espera" in a["stopSpeakingPlan"]["interruptionPhrases"]
+    assert a["backgroundSpeechDenoisingPlan"]["smartDenoisingPlan"]["enabled"]
+    assert a["transcriber"]["language"] == "multi" and "keyterm" in a["transcriber"]
+    assert "language" not in a["voice"]  # ElevenLabs infers the language from the text
+    assert a["endCallFunctionEnabled"] is False and "have a great day" in a["endCallPhrases"]
+    prompt = a["model"]["messages"][0]["content"]
+    assert "Soy Daniel" in a["firstMessage"] and "Eres HOMBRE" in prompt and "Laura es mujer" in prompt
+    en = build_assistant(contact(first_name="John", language="en"), S)
+    assert en["firstMessage"].startswith("Hi, am I speaking with John?")
+    assert en["model"]["tools"][0]["messages"][0]["content"].startswith("One moment")
+    mono = build_assistant(contact(), Settings(_env_file=None, vapi_multilingual=False, vapi_transcriber_model="nova-2",
+                                               vapi_voice_provider="11labs"))
+    assert mono["transcriber"]["language"] == "es" and "keywords" in mono["transcriber"]
+    assert mono["voice"]["language"] == "es"
+
+
+def test_stand_notes_language_gender_columns_import():
+    repo = Repository(":memory:")
+    repo.import_csv("nombre,apellidos,idioma,genero,notas_stand\n"
+                    "Ana,Uno,Portugués,F,Preguntó por servidores ThinkSystem para IA\n")
+    c = repo.list()[0]
+    assert (c.language, c.gender, c.stand_notes) == ("pt", "f", "Preguntó por servidores ThinkSystem para IA")
+    from app.script import system_prompt
+    assert "ThinkSystem" in system_prompt(c, S, datetime.now(S.tz))
+
+
+def test_spoken_email_english_portuguese():
+    from app.script import spoken_email
+    assert spoken_email("jd2@x.co", "en") == "J D, two, at, X, dot, C O"
+    assert spoken_email("ana@x.com", "pt") == "ana, arroba, xis, ponto, com"
+
+
+# ---------------- tools: referral, title, escaping
+def test_referral_becomes_pending_contact_and_title_is_updated(tmp_path, monkeypatch):
+    from app.conversation import ConversationTools
+    from app.providers.calendar import MockCalendarService
+
+    monkeypatch.chdir(tmp_path)
+    repo = Repository(":memory:")
+    c = repo.add_contact(first_name="Ana", last_name="Uno", company="Acme", title="Analista")
+    cal = MockCalendarService(S.tz, 15, 9, 17, outbox=str(tmp_path / "out"))
+    tools = ConversationTools(repo, cal, S)
+    args = {"nombre": "Carlos Ruiz", "cargo": "CIO", "contacto": "carlos@acme.com"}
+    asyncio.run(tools.dispatch("registrar_referido", args, c.id))
+    asyncio.run(tools.dispatch("registrar_referido", args, c.id))  # no duplicates
+    ref = [x for x in repo.list() if x.first_name == "Carlos"]
+    assert len(ref) == 1 and ref[0].status == Status.PENDING and ref[0].company == "Acme"
+    assert ref[0].email == "carlos@acme.com" and ref[0].consent_phone == ""  # never assumes consent
+    assert repo.get(c.id).qualification["referido"]["contact_id"] == ref[0].id
+
+    slot = asyncio.run(cal.free_slots(1))[0]
+    asyncio.run(tools.dispatch("agendar_reunion", {"email": "ana@acme.com", "fecha_hora": slot.isoformat(),
+                                                   "tema": "ia", "cargo": "Directora de TI"}, c.id))
+    assert repo.get(c.id).title == "Directora de TI"
+
+
+def test_follow_up_email_escapes_and_signs():
+    from app.script import follow_up_email
+    s = Settings(_env_file=None, sender_phone="+57 300 000 0000", sender_email="equipo@example.com")
+    _, html = follow_up_email("<b>Ana</b>", "<script>x</script>", s)
+    assert "<script>" not in html and "&lt;script&gt;" in html and "&lt;b&gt;Ana" in html
+    assert "+57 300 000 0000 · equipo@example.com" in html
+
+
+# ---------------- robustness
+def test_webhook_tool_call_without_contact_does_not_500(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    with TestClient(create_app(S, Repository(":memory:"))) as client:
+        body = {"message": {"type": "tool-calls", "call": {"id": "desconocida"}, "toolCallList": [
+            {"id": "t1", "function": {"name": "consultar_disponibilidad", "arguments": "{}"}}]}}
+        r = client.post("/webhooks/vapi", json=body, headers={"x-vapi-secret": "s3cret"})
+    assert r.status_code == 200 and "problema técnico" in r.json()["results"][0]["result"]
+
+
+def test_await_registry_drops_stale_results_and_aliases(monkeypatch):
+    from app.utils import AwaitRegistry
+
+    async def scenario():
+        reg = AwaitRegistry()
+        reg.aliases["shreq:1"] = "sh:li:ana"
+        reg.expect("sh:li:ana")
+        reg.resolve("sh:li:ana", {"ok": 1})
+        assert await reg.wait("sh:li:ana", 1) == {"ok": 1}
+        assert "shreq:1" not in reg.aliases           # alias cleaned when its lookup finished
+        reg.resolve("call:late", "report")            # late webhook nobody will wait for
+        monkeypatch.setattr(AwaitRegistry, "EARLY_TTL_S", -1)
+        reg.resolve("call:other", "x")
+        assert "call:late" not in reg._early
+    asyncio.run(scenario())
+
+
+def test_retry_single_contact_keeps_the_rest(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "data").mkdir()
+    repo = Repository(":memory:")
+    a = repo.add_contact(first_name="Ana", last_name="Uno", company="Acme", email="ana@example.com",
+                         consent_phone="3001112233")
+    b = repo.add_contact(first_name="Beto", last_name="Dos", company="Acme")
+    repo.update(a.id, status=Status.NO_ANSWER, call_id="old")
+    repo.update(b.id, status=Status.MEETING_BOOKED, meeting_start="2026-11-10T10:00:00-05:00")
+    with TestClient(create_app(S, repo)) as client:
+        assert client.post(f"/api/contacts/{a.id}/retry").json()["started"]
+        for _ in range(100):
+            time.sleep(0.05)
+            if not client.get("/api/status").json()["running"]:
+                break
+    assert repo.get(a.id).status == Status.MEETING_BOOKED and repo.get(a.id).call_id != "old"
+    assert repo.get(b.id).meeting_start == "2026-11-10T10:00:00-05:00"

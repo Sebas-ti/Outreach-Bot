@@ -14,7 +14,9 @@ import httpx
 from ..config import Settings
 from ..conversation import TOOL_SPECS, ConversationTools
 from ..models import CallOutcome, Contact
-from ..script import first_message, system_prompt
+from ..persona import (ACKNOWLEDGEMENT_PHRASES, END_CALL_PHRASES, IDLE_MESSAGES, INTERRUPTION_PHRASES,
+                       WAIT_MESSAGES, Persona, agent_persona, first_message, voicemail_message)
+from ..script import system_prompt
 from ..utils import AwaitRegistry
 
 log = logging.getLogger(__name__)
@@ -41,22 +43,37 @@ class VoiceProvider(Protocol):
     async def wait_outcome(self, call_id: str) -> CallOutcome: ...
 
 
-def build_voice(s: Settings) -> dict[str, Any]:
+def build_voice(s: Settings, p: Persona | None = None) -> dict[str, Any]:
     voice: dict[str, Any] = {
         "provider": s.vapi_voice_provider,
-        "voiceId": s.vapi_voice_id,
+        "voiceId": p.voice_id if p else s.vapi_voice_id,
         # Vapi's default formatter turns numbers into ENGLISH words ("two thousand...") -> disable it;
         # the prompt already forces numbers written in Spanish words.
         "chunkPlan": {"enabled": True, "formatPlan": {"enabled": False}},
     }
     if s.vapi_voice_model:
         voice["model"] = s.vapi_voice_model
-    if s.vapi_voice_provider in ("11labs", "cartesia"):
-        voice["language"] = "es"
+    # Forcing a language would make the voice read English/Portuguese text with Spanish rules, so in
+    # multilingual mode ElevenLabs infers it from the text; otherwise pin the opening language.
+    if s.vapi_voice_provider in ("11labs", "cartesia") and not s.vapi_multilingual:
+        voice["language"] = p.language if p else "es"
     return voice
 
 
+def build_transcriber(s: Settings, p: Persona | None = None) -> dict[str, Any]:
+    terms = [s.brand_name, s.event_name_spoken]
+    tr: dict[str, Any] = {"provider": "deepgram", "model": s.vapi_transcriber_model,
+                          "language": "multi" if s.vapi_multilingual else (p.language if p else "es")}
+    if s.vapi_transcriber_model.startswith("nova-3"):
+        tr["keyterm"] = terms  # nova-3: keyterm prompting (plain strings)
+    else:
+        tr["keywords"] = [f"{w}:2" for w in terms]  # nova-2: single words with boost
+    return tr
+
+
 def build_assistant(contact: Contact, s: Settings) -> dict[str, Any]:
+    persona = agent_persona(contact, s)
+    lang = persona.language
     server = {"url": f"{s.public_base_url}/webhooks/vapi", "headers": {"x-vapi-secret": s.webhook_secret}}
     tools = []
     for spec in TOOL_SPECS:
@@ -65,23 +82,25 @@ def build_assistant(contact: Contact, s: Settings) -> dict[str, Any]:
             "function": {"name": spec["name"], "description": spec["description"], "parameters": spec["parameters"]},
             "server": server,
         }
-        if spec["wait_message"]:
-            tool["messages"] = [{"type": "request-start", "content": spec["wait_message"]}]
+        wait = WAIT_MESSAGES.get(spec["name"], {}).get(lang)
+        if wait:
+            tool["messages"] = [{"type": "request-start", "content": wait}]
         tools.append(tool)
     return {
         "name": f"Seguimiento {s.event_name}"[:40],
-        "firstMessage": first_message(contact, s),
+        "firstMessage": first_message(contact, s, persona),
         "firstMessageMode": "assistant-speaks-first",
+        # Vapi's default is False: the person could not cut the (long) greeting -> "it keeps talking"
+        "firstMessageInterruptionsEnabled": True,
         "model": {
             "provider": s.vapi_model_provider,
             "model": s.vapi_model,
             "temperature": 0.4,
-            "messages": [{"role": "system", "content": system_prompt(contact, s, datetime.now(s.tz))}],
+            "messages": [{"role": "system", "content": system_prompt(contact, s, datetime.now(s.tz), persona)}],
             "tools": tools,
         },
-        "voice": build_voice(s),
-        "transcriber": {"provider": "deepgram", "model": s.vapi_transcriber_model, "language": "es",
-                        "keywords": [f"{s.brand_name}:2", "Andicom:2"]},
+        "voice": build_voice(s, persona),
+        "transcriber": build_transcriber(s, persona),
         # latency: answer quickly after the person stops talking (default no-punctuation wait is 1.5s)
         "startSpeakingPlan": {
             "waitSeconds": s.vapi_wait_seconds,
@@ -90,18 +109,23 @@ def build_assistant(contact: Contact, s: Settings) -> dict[str, Any]:
         },
         # if nobody talks, the agent re-engages instead of silently hanging up
         "messagePlan": {
-            "idleMessages": ["¿Sigues ahí?", "¿Me escuchas bien?", "Perdón, creo que no te escuché, ¿me repites?"],
+            "idleMessages": IDLE_MESSAGES.get(lang, IDLE_MESSAGES["es"]),
             "idleTimeoutSeconds": 7,
             "idleMessageMaxSpokenCount": 3,
         },
-        # barge-in: stop talking as soon as the person speaks over the agent
-        "stopSpeakingPlan": {"numWords": 0, "voiceSeconds": 0.2, "backoffSeconds": 1},
+        # barge-in: stop as soon as the person speaks (VAD, 0.15 s). Spanish/English/Portuguese phrases that
+        # always cut the agent; only pure backchannels ("ajá", "mjm") are ignored. Krisp denoising keeps
+        # phone-line noise from being mistaken for (or masking) the person's voice.
+        "stopSpeakingPlan": {"numWords": 0, "voiceSeconds": 0.15, "backoffSeconds": 0.8,
+                             "interruptionPhrases": INTERRUPTION_PHRASES,
+                             "acknowledgementPhrases": ACKNOWLEDGEMENT_PHRASES},
+        "backgroundSpeechDenoisingPlan": {"smartDenoisingPlan": {"enabled": True}},
         "backgroundSound": "off",
-        "endCallFunctionEnabled": True,
-        # hang up right after the agent's goodbye instead of waiting for the person's "chao"
-        "endCallPhrases": ["que tengas un excelente día", "que tengas un excelente dia"],
-        "voicemailMessage": (f"Hola {contact.first_name}, te habla {s.agent_name} del equipo de {s.company_name}. "
-                             f"Te escribiremos por correo sobre lo que viste en {s.event_name_spoken}. ¡Gracias!"),
+        # No endCall tool: the LLM used it to hang up right after booking, before saying the confirmation.
+        # The call ends when the agent says the mandatory goodbye (any language), after confirming.
+        "endCallFunctionEnabled": False,
+        "endCallPhrases": END_CALL_PHRASES,
+        "voicemailMessage": voicemail_message(contact, s, persona),
         "maxDurationSeconds": 480,
         "silenceTimeoutSeconds": 45,
         "server": server,
@@ -111,7 +135,7 @@ def build_assistant(contact: Contact, s: Settings) -> dict[str, Any]:
                 "Resume en español, en 3 frases, la llamada de seguimiento: interés, proyecto y próximo paso."}]},
             "structuredDataPlan": {"enabled": True, "schema": STRUCTURED_SCHEMA},
         },
-        "metadata": {"contact_id": contact.id},
+        "metadata": {"contact_id": contact.id, "agent": persona.name, "language": lang},
     }
 
 
@@ -235,7 +259,7 @@ class MockVoiceProvider:
         sc = (c.demo_scenario or "acepta").lower()
         await asyncio.sleep(self.s.mock_call_delay_s)
         email = c.email or f"{c.first_name.lower()}@example.com"
-        lines = [f"AI: {first_message(c, self.s)}"]
+        lines = [f"AI: {first_message(c, self.s, agent_persona(c, self.s))}"]
         structured: dict[str, Any] = {}
         ended = "customer-ended-call"
         if sc == "no_contesta":

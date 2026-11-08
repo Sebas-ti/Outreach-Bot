@@ -5,6 +5,9 @@ Bot que toma una base de contactos (nombre, apellidos, empresa, cargo…) y, por
 1. **Identifica su perfil de LinkedIn** (búsqueda pública `site:linkedin.com/in` en cascada DuckDuckGo → Google + score de coincidencia).
 2. **Enriquece el celular** con SignalHire (cascada de proveedores). Sin datos → **pasa al siguiente**.
 3. **Llama** con un agente de voz IA (Vapi + ElevenLabs) que sigue el guion de Lenovo/ANDICOM, califica y maneja objeciones.
+   El agente se adapta al contacto: **voz y nombre según su género** (a un hombre lo llama Sofía, a una mujer Daniel;
+   configurable), **habla español, inglés o portugués** (abre en el idioma de la base y cambia si la persona cambia)
+   y menciona lo que la persona **vio en el stand** si la base lo trae.
 4. **Agenda** una reunión de 15 min en Google Calendar con link de Meet y **envía la invitación** al correo,
    o envía el correo de seguimiento del guion si la persona prefiere información.
 
@@ -33,7 +36,7 @@ copy .env.example .env           # deja todo en mock
 uvicorn app.main:app --reload
 ```
 Abre http://localhost:8000 → **Cargar base de ejemplo** → **▶ Ejecutar pipeline**.
-Tests: `pytest` (19 pruebas: scoring LinkedIn, parsing y emparejamiento de SignalHire, cascadas, guarda de cumplimiento, validación de horarios, webhooks, respaldo por consulta a Vapi, end-to-end).
+Tests: `pytest` (29 pruebas: scoring LinkedIn, parsing y emparejamiento de SignalHire, cascadas, guarda de cumplimiento, validación de horarios, webhooks, respaldo por consulta a Vapi, persona por género, idiomas, interrupciones, referidos, reintento por contacto, end-to-end).
 
 ## Modo real (paso a paso)
 
@@ -58,7 +61,8 @@ SignalHire responde de forma **asíncrona** en `/webhooks/signalhire`, por eso n
    *Verified Caller IDs*: verifica **tu** celular → *Voice Geo Permissions*: habilita **Colombia**.
 3. En Vapi → *Phone Numbers* → *Import* → Twilio (Account SID + Auth Token + número) → copia el **ID** → `VAPI_PHONE_NUMBER_ID`.
 4. `VOICE_PROVIDER=vapi`. El asistente se crea **por llamada** desde el código (`app/providers/voice.py`), no hay que configurarlo en el dashboard.
-5. *(Opcional)* Voz más natural: conecta tu API key de ElevenLabs en Vapi (*Integrations*) y usa `VAPI_VOICE_PROVIDER=11labs`, `VAPI_VOICE_ID=<id>`, `VAPI_VOICE_MODEL=eleven_flash_v2_5`. Las voces de la biblioteca de ElevenLabs requieren plan pago; las voces predeterminadas funcionan en el plan gratis (`python scripts/test_elevenlabs.py` lo diagnostica).
+5. *(Opcional)* Voz por género: `VAPI_VOICE_ID_MALE=<id>` (voz del agente hombre, debe estar en "My Voices" de ElevenLabs), `AGENT_NAME_MALE`, `AGENT_GENDER_MODE=opposite | female | male`. Idiomas: `VAPI_MULTILINGUAL=true` con `VAPI_TRANSCRIBER_MODEL=nova-3` (Deepgram `multi`: español, inglés y portugués).
+6. *(Opcional)* Voz más natural: conecta tu API key de ElevenLabs en Vapi (*Integrations*) y usa `VAPI_VOICE_PROVIDER=11labs`, `VAPI_VOICE_ID=<id>`, `VAPI_VOICE_MODEL=eleven_flash_v2_5`. Las voces de la biblioteca de ElevenLabs requieren plan pago; las voces predeterminadas funcionan en el plan gratis (`python scripts/test_elevenlabs.py` lo diagnostica).
 
 > Las cuentas trial de Twilio reproducen un aviso antes de conectar la llamada; con una recarga mínima desaparece.
 
@@ -73,10 +77,16 @@ SignalHire responde de forma **asíncrona** en `/webhooks/signalhire`, por eso n
 python scripts/check_setup.py
 ```
 
-## Base de contactos (CSV)
-Columnas: `nombre, apellidos, empresa, cargo, email, linkedin_url, telefono_consentido, escenario_demo`.
+## Base de contactos (CSV o Excel)
+Columnas: `nombre, apellidos, empresa, cargo, email, linkedin_url, telefono_consentido, escenario_demo`, y opcionales `idioma, genero, notas_stand`.
 - `telefono_consentido`: número de prueba de alguien que **dio su consentimiento** (tu celular).
 - `escenario_demo`: solo para la voz simulada: `acepta | info | referido | no_interesado | no_contesta`.
+- `idioma`: `es | en | pt` (también "inglés", "portugués"…). Es el idioma de apertura; en la llamada el agente sigue el idioma de la persona.
+- `genero`: `F | M` (o "mujer"/"hombre"). Si falta, se infiere del primer nombre (lista local + terminación, sin APIs externas); si no se puede, usa el agente por defecto.
+- `notas_stand`: lo que vio o preguntó en el stand (p. ej. "servidores ThinkSystem para IA"); el agente lo menciona en la apertura, como pide el guion.
+
+Si en la llamada la persona refiere a otra ("no soy la persona indicada"), el referido se **crea como contacto nuevo** (misma empresa, pendiente) para la siguiente corrida; nunca se asume consentimiento sobre su número.
+En el panel de cada contacto, **Reintentar** vuelve a correr solo ese registro sin tocar el resto del lote.
 
 ## Cumplimiento y seguridad
 - **Sin scraping de LinkedIn**: solo resultados públicos de buscador vía API.
@@ -94,7 +104,7 @@ app/
   script.py          guion del Word → prompt del agente + plantilla del correo
   providers/         linkedin.py · enrichment.py · voice.py · calendar.py (real + mock cada uno)
   static/index.html  dashboard
-docs/                arquitectura (1 página), guion del video, preparación de la demo
+docs/                arquitectura (1 página: Markdown, PDF y Word)
 scripts/             google_auth.py · check_setup.py · test_elevenlabs.py
 tests/               pytest
 ```

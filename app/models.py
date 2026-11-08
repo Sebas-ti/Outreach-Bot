@@ -39,6 +39,9 @@ class Contact:
     phone: str = ""
     phone_source: str = ""
     demo_scenario: str = ""
+    language: str = ""  # es | en | pt (opening language)
+    gender: str = ""  # f | m | '' (optional; inferred from the first name if empty)
+    stand_notes: str = ""  # what they saw/asked at the booth (Word: "si se tiene el dato")
     status: Status = Status.PENDING
     call_id: str = ""
     call_summary: str = ""
