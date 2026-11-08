@@ -35,6 +35,14 @@ class Settings(BaseSettings):
     vapi_voice_id: str = "es-CO-SalomeNeural"
     vapi_voice_model: str = ""  # e.g. eleven_flash_v2_5 (11labs) / sonic-2 (cartesia)
     vapi_voice_id_male: str = ""  # voice for the male persona (empty -> same voice as VAPI_VOICE_ID)
+    # Native-accent voices when the base already says the contact speaks that language (empty -> Spanish voice)
+    vapi_voice_id_en: str = ""  # e.g. ElevenLabs "Bella" (American, female)
+    vapi_voice_id_en_male: str = ""  # e.g. ElevenLabs "Eric" (American, male)
+    vapi_voice_id_pt: str = ""
+    vapi_voice_id_pt_male: str = ""
+    # Barge-in: words the person must say before the agent stops (0 = any voice activity, too sensitive to
+    # people talking nearby). Interruption phrases ("espera", "wait") still stop it instantly.
+    vapi_stop_num_words: int = 2
     vapi_transcriber_model: str = "nova-3"  # nova-3 + multi = Spanish/English/Portuguese in one call
     vapi_multilingual: bool = True  # the agent follows the language the person speaks (es/en/pt)
     vapi_wait_seconds: float = 0.3

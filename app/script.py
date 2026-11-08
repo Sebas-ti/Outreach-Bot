@@ -85,9 +85,13 @@ def _language_block(c: Contact, s: Settings, p: Persona) -> str:
         return f"IDIOMA: habla siempre en {opening}."
     email_en = spoken_email(c.email, "en") if c.email else "-"
     email_pt = spoken_email(c.email, "pt") if c.email else "-"
-    return f"""IDIOMA: abriste la llamada en {opening}. Hablas español, inglés y portugués.
-- Responde SIEMPRE en el idioma en que te habla la persona. Si cambia de idioma o te lo pide, cambia de inmediato
-  y quédate en ese idioma el resto de la llamada. No mezcles idiomas en una misma frase.
+    return f"""IDIOMA: abriste la llamada en {opening} y SIGUES en {opening}. Hablas español, inglés y portugués.
+- NO cambies de idioma por palabras sueltas, saludos o muletillas en otro idioma ("hello", "hi", "ok", "bye",
+  "thank you", "sorry", "obrigado"): en Colombia es normal contestar "hello". Sigue en {opening}.
+- Cambia SOLO si la persona lo pide explícitamente ("¿podemos hablar en inglés?", "can we speak English?",
+  "prefiro em português") o si te dice que no entiende {opening}. Si responde dos o más frases completas en
+  otro idioma sin pedirlo, pregúntale en ese idioma si prefiere continuar así, y cambia solo si confirma.
+- Una vez cambies, quédate en ese idioma el resto de la llamada. No mezcles idiomas en una misma frase.
 - Este guion está escrito en español: tradúcelo con naturalidad (en inglés usa "you"; en portugués usa "você").
 - Las reglas de números también aplican: en inglés "ten thirty in the morning", en portugués "dez e meia da manhã".
 - Correo deletreado en inglés: "{email_en}"; en portugués: "{email_pt}".

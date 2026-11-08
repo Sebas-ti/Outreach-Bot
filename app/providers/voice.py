@@ -113,10 +113,10 @@ def build_assistant(contact: Contact, s: Settings) -> dict[str, Any]:
             "idleTimeoutSeconds": 7,
             "idleMessageMaxSpokenCount": 3,
         },
-        # barge-in: stop as soon as the person speaks (VAD, 0.15 s). Spanish/English/Portuguese phrases that
-        # always cut the agent; only pure backchannels ("ajá", "mjm") are ignored. Krisp denoising keeps
-        # phone-line noise from being mistaken for (or masking) the person's voice.
-        "stopSpeakingPlan": {"numWords": 0, "voiceSeconds": 0.15, "backoffSeconds": 0.8,
+        # barge-in: the agent stops when the person says `vapi_stop_num_words` transcribed words (not on any
+        # sound: a neighbour talking or street noise used to cut it off). Explicit phrases ("espera", "perdón",
+        # "wait") stop it instantly; pure backchannels ("ajá", "mjm") never do. Krisp removes background noise.
+        "stopSpeakingPlan": {"numWords": s.vapi_stop_num_words, "voiceSeconds": 0.3, "backoffSeconds": 1,
                              "interruptionPhrases": INTERRUPTION_PHRASES,
                              "acknowledgementPhrases": ACKNOWLEDGEMENT_PHRASES},
         "backgroundSpeechDenoisingPlan": {"smartDenoisingPlan": {"enabled": True}},

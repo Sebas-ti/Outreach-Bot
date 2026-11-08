@@ -305,6 +305,8 @@ def test_assistant_barge_in_multilingual_and_persona():
     a = build_assistant(contact(first_name="Laura"), S)
     assert a["firstMessageInterruptionsEnabled"] is True
     assert "espera" in a["stopSpeakingPlan"]["interruptionPhrases"]
+    assert a["stopSpeakingPlan"]["numWords"] == 2  # background voices must not cut the agent
+    assert "pero" not in a["stopSpeakingPlan"]["interruptionPhrases"]
     assert a["backgroundSpeechDenoisingPlan"]["smartDenoisingPlan"]["enabled"]
     assert a["transcriber"]["language"] == "multi" and "keyterm" in a["transcriber"]
     assert "language" not in a["voice"]  # ElevenLabs infers the language from the text
@@ -412,3 +414,15 @@ def test_retry_single_contact_keeps_the_rest(tmp_path, monkeypatch):
                 break
     assert repo.get(a.id).status == Status.MEETING_BOOKED and repo.get(a.id).call_id != "old"
     assert repo.get(b.id).meeting_start == "2026-11-10T10:00:00-05:00"
+
+
+def test_language_switch_needs_explicit_request_and_english_gets_native_voice():
+    from app.persona import agent_persona
+    s = Settings(_env_file=None, vapi_voice_id="es-f", vapi_voice_id_male="es-m",
+                 vapi_voice_id_en="us-f", vapi_voice_id_en_male="us-m")
+    assert agent_persona(contact(first_name="John", language="en"), s).voice_id == "us-f"   # man -> Sofía, US voice
+    assert agent_persona(contact(first_name="Mary", language="en"), s).voice_id == "us-m"   # woman -> Daniel, US voice
+    assert agent_persona(contact(first_name="Andrés"), s).voice_id == "es-f"                # Spanish stays Colombian
+    assert agent_persona(contact(first_name="Ana", language="pt"), s).voice_id == "es-m"    # no pt voice -> fallback
+    prompt = build_assistant(contact(first_name="Andrés"), s)["model"]["messages"][0]["content"]
+    assert '"hello"' in prompt and "SOLO si la persona lo pide" in prompt

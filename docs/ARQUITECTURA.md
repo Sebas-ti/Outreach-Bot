@@ -12,7 +12,7 @@ CSV ─► Orquestador Python (FastAPI + SQLite) · máquina de estados por cont
   5. Agenda ────── Google Calendar (free/busy + evento con Meet + invitación) · Gmail (correo de seguimiento del guion)
   6. Cierre ────── transcripción, grabación, resumen, calificación estructurada, duración y costo → dashboard y analítica
 ```
-Cada etapa es una interfaz con implementación **real** y **simulada**, configurable en `.env`. Así se prueba por partes, la demo no depende de terceros y cambiar de proveedor toca un solo archivo. 29 pruebas automáticas.
+Cada etapa es una interfaz con implementación **real** y **simulada**, configurable en `.env`. Así se prueba por partes, la demo no depende de terceros y cambiar de proveedor toca un solo archivo. 30 pruebas automáticas.
 
 ## Herramientas y por qué
 | Necesidad | Elección | Por qué |

@@ -89,12 +89,16 @@ def agent_persona(c: Contact, s: Settings) -> Persona:
         gender = "m"
     else:  # opposite: man -> female agent, woman -> male agent, unknown -> default
         gender = {"m": "f", "f": "m"}.get(cg, normalize_gender(s.agent_default_gender) or "f")
+    language = normalize_language(c.language) or normalize_language(s.default_language) or "es"
     if gender == "m":
         name, voice = s.agent_name_male, s.vapi_voice_id_male or s.vapi_voice_id
     else:
         name, voice = s.agent_name, s.vapi_voice_id
-    language = normalize_language(c.language) or normalize_language(s.default_language) or "es"
-    return Persona(name=name, gender=gender, voice_id=voice, language=language, contact_gender=cg)
+    # A contact known to speak English/Portuguese gets a native-accent voice (a Colombian voice speaking
+    # English sounds strongly accented). Mid-call switches keep the opening voice.
+    native = {("en", "f"): s.vapi_voice_id_en, ("en", "m"): s.vapi_voice_id_en_male,
+              ("pt", "f"): s.vapi_voice_id_pt, ("pt", "m"): s.vapi_voice_id_pt_male}.get((language, gender))
+    return Persona(name=name, gender=gender, voice_id=native or voice, language=language, contact_gender=cg)
 
 
 # ------------------------------------------------------------------ localized fixed phrases
@@ -122,8 +126,8 @@ IDLE_MESSAGES = {
 # Backchannel words that must NOT cut the agent off, and words that always should.
 # Kept minimal on purpose: "claro", "ok" or "sí" are often real answers and must stop the agent.
 ACKNOWLEDGEMENT_PHRASES = ["ajá", "aja", "mjm", "mm-hmm", "uh-huh", "uhum"]
-INTERRUPTION_PHRASES = ["espera", "espere", "un momento", "perdón", "perdona", "disculpa", "pero", "oye", "no no",
-                        "para", "wait", "stop", "hold on", "sorry", "but", "actually", "espera aí", "desculpa", "mas"]
+INTERRUPTION_PHRASES = ["espera", "espere", "un momento", "perdón", "perdona", "disculpa", "soy yo",
+                        "wait", "hold on", "sorry", "espera aí", "desculpa"]
 
 
 def first_message(c: Contact, s: Settings, p: Persona) -> str:
