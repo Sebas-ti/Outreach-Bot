@@ -420,9 +420,9 @@ function qualSection(q){
   const yn = v => v===true?"Sí":v===false?"No":v;
   const LBL = {resultado:"Resultado",tiene_proyecto:"Tiene proyecto",descripcion_proyecto:"Proyecto",etapa:"Etapa",fecha_meta:"Fecha meta",
     lider_y_decisores:"Decisores",tema_interes:"Tema de interés",tema:"Tema",notas:"Notas",cargo_confirmado:"Cargo confirmado",celular_confirmado:"Celular confirmado",
-    motivo_cierre:"Motivo del cierre",detalle_cierre:"Qué pasó"};
+    motivo_cierre:"Motivo del cierre",detalle_cierre:"Qué pasó",invitados:"Invitados adicionales"};
   const rows = keys.filter(k => !["objeciones","referido"].includes(k)).map(k =>
-    `<dt>${LBL[k]||k.replace(/_/g," ")}</dt><dd>${esc(k==="resultado"?(RESULT[q[k]]||q[k]):k==="motivo_cierre"?(CLOSE_REASON[q[k]]||q[k]):yn(q[k]))}</dd>`).join("");
+    `<dt>${LBL[k]||k.replace(/_/g," ")}</dt><dd>${esc(k==="resultado"?(RESULT[q[k]]||q[k]):k==="motivo_cierre"?(CLOSE_REASON[q[k]]||q[k]):Array.isArray(q[k])?q[k].join(", "):yn(q[k]))}</dd>`).join("");
   const obj = (q.objeciones||[]).length ? `<dt>Objeciones</dt><dd><div class="tags">${q.objeciones.map(o=>`<span class="tag">${esc(o)}</span>`).join("")}</div></dd>` : "";
   const ref = q.referido ? `<dt>Referido</dt><dd>${esc(q.referido.nombre)} ${q.referido.cargo?`· ${esc(q.referido.cargo)}`:""} ${q.referido.contacto?`· ${esc(q.referido.contacto)}`:""}</dd>` : "";
   return `<div class="sec"><h4>${ico("star")}Calificación de la llamada</h4><dl class="kv">${rows}${obj}${ref}</dl></div>`;

@@ -22,7 +22,8 @@ SCOPES = [
 class CalendarService(Protocol):
     async def free_slots(self, n: int = 3) -> list[datetime]: ...
     async def is_available(self, start: datetime) -> tuple[bool, str]: ...
-    async def book(self, email: str, name: str, start: datetime, summary: str, description: str) -> Booking: ...
+    async def book(self, email: str, name: str, start: datetime, summary: str, description: str,
+                   guests: list[tuple[str, str]] | None = None) -> Booking: ...
     async def send_email(self, to: str, subject: str, html: str) -> str: ...
 
 
@@ -139,14 +140,16 @@ class GoogleCalendarService:
             calendarId=self.calendar_id, body=body, conferenceDataVersion=1, sendUpdates="all"
         ).execute()
 
-    async def book(self, email: str, name: str, start: datetime, summary: str, description: str) -> Booking:
+    async def book(self, email: str, name: str, start: datetime, summary: str, description: str,
+                   guests: list[tuple[str, str]] | None = None) -> Booking:
         end = start + self.duration
         body = {
             "summary": summary,
             "description": description,
             "start": {"dateTime": start.isoformat(), "timeZone": str(self.tz)},
             "end": {"dateTime": end.isoformat(), "timeZone": str(self.tz)},
-            "attendees": [{"email": email, "displayName": name}],
+            "attendees": [{"email": email, "displayName": name}]
+                         + [{"email": e, **({"displayName": n} if n else {})} for e, n in guests or []],
             "conferenceData": {"createRequest": {
                 "requestId": f"bot-{int(start.timestamp())}-{abs(hash(email)) % 10_000}",
                 "conferenceSolutionKey": {"type": "hangoutsMeet"},
@@ -193,12 +196,13 @@ class MockCalendarService:
             return False, "el especialista ya tiene otra reunión a esa hora"
         return True, ""
 
-    async def book(self, email: str, name: str, start: datetime, summary: str, description: str) -> Booking:
+    async def book(self, email: str, name: str, start: datetime, summary: str, description: str,
+                   guests: list[tuple[str, str]] | None = None) -> Booking:
         b = Booking(event_id=f"mock-{len(self.booked) + 1}", start=start.isoformat(),
                     meet_link="https://meet.google.com/abc-mock-xyz")
         self.booked.append(b)
         (self.outbox / f"invite_{b.event_id}.txt").write_text(
-            f"PARA: {email} ({name})\nEVENTO: {summary}\nINICIO: {start.isoformat()}\n"
+            f"PARA: {email} ({name})" + "".join(f", {e}" for e, _ in guests or []) + "\nEVENTO: {summary}\nINICIO: {start.isoformat()}\n"
             f"MEET: {b.meet_link}\n\n{description}\n", encoding="utf-8")
         return b
 

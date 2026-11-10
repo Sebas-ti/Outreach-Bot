@@ -47,6 +47,11 @@ SPOKEN = {
            "cero uno dos tres cuatro cinco seis siete ocho nueve".split()),
     "en": ({}, {"@": "at", ".": "dot", "_": "underscore", "-": "dash", "+": "plus"},
            "zero one two three four five six seven eight nine".split()),
+    "fr": ({"a": "a", "b": "bé", "c": "cé", "d": "dé", "e": "e", "f": "effe", "g": "gé", "h": "ache", "i": "i",
+            "j": "ji", "k": "ka", "l": "elle", "m": "emme", "n": "enne", "o": "o", "p": "pé", "q": "ku", "r": "erre",
+            "s": "esse", "t": "té", "u": "u", "v": "vé", "w": "double vé", "x": "ixe", "y": "i grec", "z": "zède"},
+           {"@": "arobase", ".": "point", "_": "tiret bas", "-": "tiret", "+": "plus"},
+           "zéro un deux trois quatre cinq six sept huit neuf".split()),
     "pt": (LETTERS_PT, {"@": "arroba", ".": "ponto", "_": "underline", "-": "hífen", "+": "mais"},
            "zero um dois três quatro cinco seis sete oito nove".split()),
 }
@@ -85,18 +90,21 @@ def _language_block(c: Contact, s: Settings, p: Persona) -> str:
         return f"IDIOMA: habla siempre en {opening}."
     email_en = spoken_email(c.email, "en") if c.email else "-"
     email_pt = spoken_email(c.email, "pt") if c.email else "-"
-    return f"""IDIOMA: abriste la llamada en {opening} y SIGUES en {opening}. Hablas español, inglés y portugués.
+    email_fr = spoken_email(c.email, "fr") if c.email else "-"
+    return f"""IDIOMA: abriste la llamada en {opening} y SIGUES en {opening}. Hablas español, inglés, portugués y francés.
 - NO cambies de idioma por palabras sueltas, saludos o muletillas en otro idioma ("hello", "hi", "ok", "bye",
   "thank you", "sorry", "obrigado"): en Colombia es normal contestar "hello". Sigue en {opening}.
 - Cambia SOLO si la persona lo pide explícitamente ("¿podemos hablar en inglés?", "can we speak English?",
-  "prefiro em português") o si te dice que no entiende {opening}. Si responde dos o más frases completas en
+  "prefiro em português", "on peut parler en français ?") o si te dice que no entiende {opening}. Si responde dos o más frases completas en
   otro idioma sin pedirlo, pregúntale en ese idioma si prefiere continuar así, y cambia solo si confirma.
 - Una vez cambies, quédate en ese idioma el resto de la llamada. No mezcles idiomas en una misma frase.
-- Este guion está escrito en español: tradúcelo con naturalidad (en inglés usa "you"; en portugués usa "você").
-- Las reglas de números también aplican: en inglés "ten thirty in the morning", en portugués "dez e meia da manhã".
-- Correo deletreado en inglés: "{email_en}"; en portugués: "{email_pt}".
+- Este guion está escrito en español: tradúcelo con naturalidad (en inglés usa "you"; en portugués usa "você";
+  en francés usa SIEMPRE "vous", nunca "tu", con un registro profesional).
+- Las reglas de números también aplican: en inglés "ten thirty in the morning", en portugués "dez e meia da manhã",
+  en francés "dix heures et demie du matin".
+- Correo deletreado en inglés: "{email_en}"; en portugués: "{email_pt}"; en francés: "{email_fr}".
 - Despedida obligatoria según el idioma: español "{CLOSING['es']}", inglés "{CLOSING['en']}",
-  portugués "{CLOSING['pt']}". La llamada se cuelga sola al decirla."""
+  portugués "{CLOSING['pt']}", francés "{CLOSING['fr']}". La llamada se cuelga sola al decirla."""
 
 
 def system_prompt(c: Contact, s: Settings, now: datetime, p: Persona | None = None) -> str:
@@ -146,11 +154,15 @@ GUION
      Pregunta si es correcto. Si dicta otro, repítelo con el mismo formato: letras o palabras, cada número en palabras
      ("uno, dos, tres"), "arroba" por @ y "punto" por el punto. En la herramienta usa el correo normal (con @ y puntos).
      Pregunta también su cargo y un celular por si surge algún cambio.
+   - Pregunta si alguien más de su equipo debería estar en la reunión (sobre todo quien lidera o decide, si lo
+     mencionó). Por cada persona pide nombre y correo, confirma cada correo deletreado igual que el suyo y pásalos
+     en `invitados_adicionales`. Si no quiere sumar a nadie, sigue sin insistir.
    - Llama a `agendar_reunion` con el horario EXACTO (fecha_hora en formato ISO tal como lo devolvió
-     consultar_disponibilidad), el cargo y el celular que confirmó, y un resumen de lo que contó en `notas`.
+     consultar_disponibilidad), el cargo y el celular que confirmó, los invitados adicionales y un resumen de lo
+     que contó en `notas`.
    - Cuando la herramienta confirme, SIEMPRE di la confirmación con el día y la hora antes de despedirte:
      "Listo, {c.first_name}, quedó agendada para el [día y hora en palabras]. Te llega la invitación con el enlace
-     de Meet a tu correo. Gracias por tu tiempo y por acompañarnos en {s.event_name_spoken}. ¡Que tengas un excelente día!"
+     de Meet a tu correo [y al de los invitados, si hay]. Gracias por tu tiempo y por acompañarnos en {s.event_name_spoken}. ¡Que tengas un excelente día!"
 
 4. SI LA RESPUESTA ES NO (por ahora):
    - "Entiendo. ¿Hay algún tema que estén empezando a contemplar, aunque sea a más largo plazo?"

@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     vapi_voice_id_en_male: str = ""  # e.g. ElevenLabs "Eric" (American, male)
     vapi_voice_id_pt: str = ""
     vapi_voice_id_pt_male: str = ""
+    vapi_voice_id_fr: str = ""  # e.g. ElevenLabs "Lucie" (French, female)
+    vapi_voice_id_fr_male: str = ""  # e.g. ElevenLabs "Marcel" (French, male)
     # Barge-in: words the person must say before the agent stops (0 = any voice activity, too sensitive to
     # people talking nearby). Interruption phrases ("espera", "wait") still stop it instantly.
     vapi_stop_num_words: int = 2

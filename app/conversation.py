@@ -39,6 +39,12 @@ TOOL_SPECS: list[dict[str, Any]] = [
                 "cargo": {"type": "string", "description": "Cargo confirmado del contacto"},
                 "celular": {"type": "string", "description": "Celular confirmado por si surge algún cambio"},
                 "notas": {"type": "string", "description": "Resumen del proyecto: qué buscan, etapa, fecha meta y decisores"},
+                "invitados_adicionales": {
+                    "type": "array",
+                    "description": "Otras personas de su equipo que también recibirán la invitación (correo confirmado)",
+                    "items": {"type": "object", "properties": {
+                        "nombre": {"type": "string"}, "email": {"type": "string"}}, "required": ["email"]},
+                },
             },
             "required": ["email", "fecha_hora", "tema"],
         },
@@ -118,13 +124,23 @@ class ConversationTools:
     NOT_SERIOUS_REPLY = "La llamada fue marcada como no seria: no agendes ni envíes nada. Despídete ya."
 
     async def tool_agendar_reunion(self, contact_id: int, email: str, fecha_hora: str, tema: str = "",
-                                   cargo: str = "", celular: str = "", notas: str = "", **_) -> str:
+                                   cargo: str = "", celular: str = "", notas: str = "",
+                                   invitados_adicionales: list | None = None, **_) -> str:
         c = self.repo.get(contact_id)
         if c.status == Status.NOT_SERIOUS:
             return self.NOT_SERIOUS_REPLY
         email = email.strip().lower().replace(" ", "")
         if not EMAIL_RE.match(email):
             return f"El correo '{email}' no parece válido. Pide que lo confirme de nuevo, letra por letra."
+        guests: list[tuple[str, str]] = []
+        for g in invitados_adicionales or []:
+            g = g if isinstance(g, dict) else {"email": str(g)}
+            g_email = str(g.get("email", "")).strip().lower().replace(" ", "")
+            if not EMAIL_RE.match(g_email):
+                return (f"El correo del invitado '{g_email}' no parece válido. Pide que lo confirme letra por letra "
+                        f"(o agenda sin esa persona si no lo tiene).")
+            if g_email != email and g_email not in {e for e, _ in guests}:
+                guests.append((g_email, str(g.get("nombre", "")).strip()))
         try:
             start = datetime.fromisoformat(fecha_hora)
         except ValueError:
@@ -144,20 +160,25 @@ class ConversationTools:
         description = (
             f"Seguimiento {self.s.event_name}.\n\n"
             f"Contacto: {c.full_name} – {cargo or c.title} – {c.company}\n"
-            f"Correo: {email}\nCelular: {celular or c.phone}\nTema de interés: {tema}\n\n"
+            f"Correo: {email}\nCelular: {celular or c.phone}\nTema de interés: {tema}\n"
+            + (f"Invitados: {', '.join(f'{n} <{e}>' if n else e for e, n in guests)}\n" if guests else "")
+            + "\n"
             f"Contexto de la llamada:\n{notas or '-'}\n\n"
             f"Agendado automáticamente por el asistente virtual de {self.s.company_name}."
         )
-        booking = await self.calendar.book(email, c.full_name, start, summary, description)
+        booking = await self.calendar.book(email, c.full_name, start, summary, description, guests)
         q = {**c.qualification, "tema": tema, "notas": notas, "cargo_confirmado": cargo, "celular_confirmado": celular}
+        if guests:
+            q["invitados"] = [f"{n} <{e}>" if n else e for e, n in guests]
         updates = {}
         if cargo and cargo.strip().lower() != (c.title or "").strip().lower():
             updates["title"] = cargo.strip()  # Word: confirm title at closing -> keep the record current
             self.repo.log(contact_id, "call", f"Cargo actualizado: '{c.title or '-'}' → '{cargo.strip()}'")
         self.repo.update(contact_id, status=Status.MEETING_BOOKED, email=email, meeting_start=booking.start,
                          meeting_link=booking.meet_link or booking.html_link, qualification=q, **updates)
-        self.repo.log(contact_id, "calendar", f"Reunión agendada {booking.start} · invitación enviada a {email}")
-        return f"Reunión agendada para el {human_dt(start)}; la invitación ya fue enviada a {email}."
+        extra = f" y {len(guests)} invitado(s): {', '.join(e for e, _ in guests)}" if guests else ""
+        self.repo.log(contact_id, "calendar", f"Reunión agendada {booking.start} · invitación enviada a {email}{extra}")
+        return f"Reunión agendada para el {human_dt(start)}; la invitación ya fue enviada a {email}{extra}."
 
     async def tool_enviar_resumen_correo(self, contact_id: int, email: str, tema_interes: str = "", **_) -> str:
         c = self.repo.get(contact_id)

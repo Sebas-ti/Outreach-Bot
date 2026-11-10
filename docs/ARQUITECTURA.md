@@ -13,7 +13,7 @@ CSV ─► Orquestador Python (FastAPI + SQLite) · máquina de estados por cont
   5. Agenda ────── Google Calendar (free/busy + evento con Meet + invitación) · Gmail (correo de seguimiento del guion)
   6. Cierre ────── transcripción, grabación, resumen, calificación estructurada, duración y costo → dashboard y analítica
 ```
-Cada etapa es una interfaz con implementación **real** y **simulada**, configurable en `.env`. Así se prueba por partes, la demo no depende de terceros y cambiar de proveedor toca un solo archivo. 33 pruebas automáticas.
+Cada etapa es una interfaz con implementación **real** y **simulada**, configurable en `.env`. Así se prueba por partes, la demo no depende de terceros y cambiar de proveedor toca un solo archivo. 35 pruebas automáticas.
 
 ## Herramientas y por qué
 | Necesidad | Elección | Por qué |
@@ -21,7 +21,7 @@ Cada etapa es una interfaz con implementación **real** y **simulada**, configur
 | Orquestación | Python + FastAPI | Control de webhooks asíncronos y de llamadas en vivo, código testeable y versionable. n8n sirve para prototipar, pero es frágil con callbacks y estado. |
 | LinkedIn | SerpAPI (DuckDuckGo → Google) | Sin scraping ni login (respeta los términos de LinkedIn). En las pruebas, Google ignoró `site:`; DuckDuckGo encontró el perfil real con **100 %** en una búsqueda. |
 | Celular | SignalHire + cascada | La herramienta sugerida, con cobertura en LATAM. La cascada permite sumar Lusha o Apollo sin tocar el orquestador. |
-| Voz | Vapi + ElevenLabs | Interrupciones (saludo interrumpible, frases de corte en 3 idiomas, reducción de ruido), *tool calling* durante la llamada y análisis post-llamada. Voz y nombre del agente según el género del contacto (hombre → Sofía, mujer → Daniel); habla español, inglés y portugués. Latencia ajustada (endpointing de 0,8 s). |
+| Voz | Vapi + ElevenLabs | Interrupciones (saludo interrumpible, frases de corte en 3 idiomas, reducción de ruido), *tool calling* durante la llamada y análisis post-llamada. Voz y nombre del agente según el género del contacto (hombre → Sofía, mujer → Daniel); habla español, inglés, portugués y francés. Latencia ajustada (endpointing de 0,8 s). |
 | Agenda | Google Calendar + Meet | Respeta la disponibilidad real, valida el horario y envía una invitación nativa. |
 
 ## Resultados de la prueba real (persona con consentimiento)

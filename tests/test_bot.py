@@ -470,3 +470,42 @@ def test_mock_prank_scenario_end_to_end(tmp_path, monkeypatch):
                 break
         beto = client.get("/api/contacts").json()[0]
     assert beto["status"] == "NOT_SERIOUS" and not beto["meeting_start"]
+
+
+# ---------------- French + several attendees
+def test_french_contact_gets_french_opening_voice_and_closing():
+    from app.persona import agent_persona
+    from app.script import spoken_email
+    s = Settings(_env_file=None, vapi_voice_id_fr="fr-f", vapi_voice_id_fr_male="fr-m")
+    man = contact(first_name="Ambroise", language="francés")
+    a = build_assistant(man, s)
+    assert agent_persona(man, s).voice_id == "fr-f"  # man -> Sofía with a native French voice
+    assert a["firstMessage"].startswith("Bonjour, je suis bien avec Ambroise ?")
+    assert "assistante virtuelle" in a["firstMessage"] and "vous êtes passé nous" in a["firstMessage"]
+    assert a["model"]["tools"][0]["messages"][0]["content"].startswith("Un instant")
+    assert "une excellente journée" in a["endCallPhrases"]
+    assert '"vous"' in a["model"]["messages"][0]["content"]
+    woman = build_assistant(contact(first_name="Claire", language="fr"), s)
+    assert "assistant virtuel" in woman["firstMessage"] and "passée" in woman["firstMessage"]
+    assert spoken_email("ab2@x.fr", "fr") == "a bé, deux, arobase, ixe, point, effe erre"
+
+
+def test_meeting_with_additional_attendees(tmp_path, monkeypatch):
+    from app.conversation import ConversationTools
+    from app.providers.calendar import MockCalendarService
+
+    monkeypatch.chdir(tmp_path)
+    repo = Repository(":memory:")
+    c = repo.add_contact(first_name="Ana", last_name="Uno", company="Acme")
+    cal = MockCalendarService(S.tz, 15, 9, 17, outbox=str(tmp_path / "out"))
+    tools = ConversationTools(repo, cal, S)
+    slot = asyncio.run(cal.free_slots(1))[0].isoformat()
+    base = {"email": "ana@acme.com", "fecha_hora": slot, "tema": "ia"}
+    bad = asyncio.run(tools.dispatch("agendar_reunion", {**base, "invitados_adicionales": [{"email": "carlos@"}]}, c.id))
+    assert "invitado" in bad and not cal.booked
+    guests = [{"nombre": "Carlos Ruiz", "email": "Carlos@Acme.com"}, {"email": "ana@acme.com"}, {"email": "lu@acme.com"}]
+    ok = asyncio.run(tools.dispatch("agendar_reunion", {**base, "invitados_adicionales": guests}, c.id))
+    assert "2 invitado(s)" in ok
+    assert repo.get(c.id).qualification["invitados"] == ["Carlos Ruiz <carlos@acme.com>", "lu@acme.com"]
+    invite = next((tmp_path / "out").glob("invite_*.txt")).read_text(encoding="utf-8")
+    assert "carlos@acme.com" in invite and "lu@acme.com" in invite
