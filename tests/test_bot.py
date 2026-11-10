@@ -307,8 +307,12 @@ def test_assistant_barge_in_multilingual_and_persona():
     assert "espera" in a["stopSpeakingPlan"]["interruptionPhrases"]
     assert a["stopSpeakingPlan"]["numWords"] == 2  # background voices must not cut the agent
     assert "pero" not in a["stopSpeakingPlan"]["interruptionPhrases"]
-    assert a["backgroundSpeechDenoisingPlan"]["smartDenoisingPlan"]["enabled"]
-    assert a["transcriber"]["language"] == "multi" and "keyterm" in a["transcriber"]
+    assert a["backgroundSpeechDenoisingPlan"]["smartDenoisingPlan"]["enabled"] is False  # keeps soft voices
+    assert a["transcriber"]["language"] == "es" and "keyterm" in a["transcriber"]  # only the contact's language
+    multi = build_assistant(contact(), Settings(_env_file=None, vapi_transcriber_multi=True, vapi_denoise=True))
+    assert multi["transcriber"]["language"] == "multi"
+    assert multi["backgroundSpeechDenoisingPlan"]["smartDenoisingPlan"]["enabled"] is True
+    assert build_assistant(contact(language="fr"), S)["transcriber"]["language"] == "fr"
     assert "language" not in a["voice"]  # ElevenLabs infers the language from the text
     assert a["endCallFunctionEnabled"] is False and "have a great day" in a["endCallPhrases"]
     prompt = a["model"]["messages"][0]["content"]
@@ -559,3 +563,8 @@ def test_two_script_styles_strict_word_for_word_and_natural():
     repo = R(":memory:")
     repo.import_csv("nombre,estilo\nAna,Guion exacto\nBeto,natural\nCaro,\n")
     assert [c.script_style for c in repo.list()] == ["guion", "natural", ""]
+
+
+def test_prompt_asks_to_repeat_instead_of_guessing_garbled_transcripts():
+    prompt = build_assistant(contact(), S)["model"]["messages"][0]["content"]
+    assert "transcripción automática" in prompt and "¿me repites?" in prompt

@@ -48,7 +48,13 @@ class Settings(BaseSettings):
     # Prank/abusive calls: after the agent flags it, the server force-ends the call if it is still up
     abuse_hangup_after_s: float = 12
     vapi_transcriber_model: str = "nova-3"  # nova-3 + multi = Spanish/English/Portuguese in one call
-    vapi_multilingual: bool = True  # the agent follows the language the person speaks (es/en/pt)
+    vapi_multilingual: bool = True  # the agent can switch language when the person asks (es/en/pt/fr)
+    # Deepgram "multi" guesses the language of every phrase: with a soft voice it wrote Spanish as English
+    # ("And, David", "Yes, period"). Default: transcribe only the contact's language (much more accurate).
+    vapi_transcriber_multi: bool = False
+    # Krisp noise suppression can erase a soft voice; background voices are already handled by
+    # VAPI_STOP_NUM_WORDS (2 words to interrupt). Turn on only in very noisy environments.
+    vapi_denoise: bool = False
     vapi_wait_seconds: float = 0.3
     # assistant-waits-for-user: like a human caller, let the person say "¿Aló?" first (instead of talking the
     # instant they pick up). assistant-speaks-first restores the previous behaviour.

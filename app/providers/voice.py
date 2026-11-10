@@ -65,7 +65,7 @@ def build_voice(s: Settings, p: Persona | None = None) -> dict[str, Any]:
 def build_transcriber(s: Settings, p: Persona | None = None) -> dict[str, Any]:
     terms = [s.brand_name, s.event_name_spoken]
     tr: dict[str, Any] = {"provider": "deepgram", "model": s.vapi_transcriber_model,
-                          "language": "multi" if s.vapi_multilingual else (p.language if p else "es")}
+                          "language": "multi" if s.vapi_transcriber_multi else (p.language if p else "es")}
     if s.vapi_transcriber_model.startswith("nova-3"):
         tr["keyterm"] = terms  # nova-3: keyterm prompting (plain strings)
     else:
@@ -121,7 +121,7 @@ def build_assistant(contact: Contact, s: Settings) -> dict[str, Any]:
         "stopSpeakingPlan": {"numWords": s.vapi_stop_num_words, "voiceSeconds": 0.3, "backoffSeconds": 1,
                              "interruptionPhrases": INTERRUPTION_PHRASES,
                              "acknowledgementPhrases": ACKNOWLEDGEMENT_PHRASES},
-        "backgroundSpeechDenoisingPlan": {"smartDenoisingPlan": {"enabled": True}},
+        "backgroundSpeechDenoisingPlan": {"smartDenoisingPlan": {"enabled": s.vapi_denoise}},
         "backgroundSound": "off",
         # No endCall tool: the LLM used it to hang up right after booking, before saying the confirmation.
         # The call ends when the agent says the mandatory goodbye (any language), after confirming.
