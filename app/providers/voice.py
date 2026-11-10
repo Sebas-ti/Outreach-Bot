@@ -15,7 +15,7 @@ from ..config import Settings
 from ..conversation import TOOL_SPECS, ConversationTools
 from ..models import CallOutcome, Contact
 from ..persona import (ACKNOWLEDGEMENT_PHRASES, END_CALL_PHRASES, IDLE_MESSAGES, INTERRUPTION_PHRASES,
-                       WAIT_MESSAGES, Persona, agent_persona, first_message, voicemail_message)
+                       WAIT_MESSAGES, Persona, agent_persona, first_message, script_style, voicemail_message)
 from ..script import system_prompt
 from ..utils import AwaitRegistry
 
@@ -97,7 +97,7 @@ def build_assistant(contact: Contact, s: Settings) -> dict[str, Any]:
         "model": {
             "provider": s.vapi_model_provider,
             "model": s.vapi_model,
-            "temperature": s.vapi_temperature,
+            "temperature": s.vapi_temperature_strict if script_style(contact, s) == "guion" else s.vapi_temperature,
             "messages": [{"role": "system", "content": system_prompt(contact, s, datetime.now(s.tz), persona)}],
             "tools": tools,
         },
@@ -134,13 +134,15 @@ def build_assistant(contact: Contact, s: Settings) -> dict[str, Any]:
         "silenceTimeoutSeconds": 45,
         "server": server,
         # speech-update: lets the server know whether the person has said anything yet (silence nudge)
-        "serverMessages": ["end-of-call-report", "status-update", "tool-calls", "speech-update"],
+        "serverMessages": ["end-of-call-report", "status-update", "tool-calls", "speech-update",
+                           "conversation-update"],
         "analysisPlan": {
             "summaryPlan": {"messages": [{"role": "system", "content":
                 "Resume en español, en 3 frases, la llamada de seguimiento: interés, proyecto y próximo paso."}]},
             "structuredDataPlan": {"enabled": True, "schema": STRUCTURED_SCHEMA},
         },
-        "metadata": {"contact_id": contact.id, "agent": persona.name, "language": lang},
+        "metadata": {"contact_id": contact.id, "agent": persona.name, "language": lang,
+                     "style": script_style(contact, s)},
     }
 
 

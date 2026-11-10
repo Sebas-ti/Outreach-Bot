@@ -56,8 +56,10 @@ class Settings(BaseSettings):
     # If nobody says anything after picking up, the server makes the agent say "¿Aló?" (Vapi's idle messages
     # only start after the first exchange). Seconds of silence before each nudge; 0 disables it.
     silence_nudge_after_s: float = 5
-    silence_nudge_max: int = 2
-    vapi_temperature: float = 0.7  # some variety in wording so it doesn't sound recited
+    silence_nudge_max: int = 1
+    vapi_temperature: float = 0.7  # natural style: some variety in wording so it doesn't sound recited
+    vapi_temperature_strict: float = 0.3  # "guion" style: say the client's phrases word for word
+    script_style: str = "natural"  # natural | guion  (per contact: column "estilo" in the CSV/Excel)
     # ElevenLabs: lower stability = more expressive, less monotone delivery
     vapi_voice_stability: float = 0.4
     vapi_voice_similarity: float = 0.8

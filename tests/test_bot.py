@@ -534,7 +534,7 @@ def test_silence_nudge_only_when_nobody_speaks(monkeypatch):
     s = Settings(_env_file=None, silence_nudge_after_s=0.01)
     c = types.SimpleNamespace(s=s, repo=types.SimpleNamespace(log=lambda *a: None))
     asyncio.run(main.silence_nudge(c, {"id": "quiet"}, 1, "es"))
-    assert said == ["¿Aló? ¿Me escuchas?", "¿Aló? Creo que no te escucho bien."]
+    assert said == ["¿Aló? ¿Me escuchas?"]  # a single nudge: never stacked on top of the greeting
     said.clear()
     main.HEARD.add("talked")
     asyncio.run(main.silence_nudge(c, {"id": "talked"}, 1, "fr"))
@@ -544,3 +544,18 @@ def test_silence_nudge_only_when_nobody_speaks(monkeypatch):
 
 def test_assistant_listens_for_speech_updates():
     assert "speech-update" in build_assistant(contact(), S)["serverMessages"]
+
+
+def test_two_script_styles_strict_word_for_word_and_natural():
+    from app.db import Repository as R
+    strict = build_assistant(contact(script_style="guion"), S)
+    sp = strict["model"]["messages"][0]["content"]
+    assert strict["model"]["temperature"] == 0.3 and "AL PIE DE LA LETRA" in sp
+    assert '"¿Tienen actualmente algún proyecto de modernización tecnológica en evaluación o planeación?"' in sp
+    natural = build_assistant(contact(), S)
+    np_ = natural["model"]["messages"][0]["content"]
+    assert natural["model"]["temperature"] == 0.7 and "NO frases para recitar" in np_ and "AL PIE" not in np_
+    assert "{" not in np_ and "{" not in sp  # every placeholder was filled
+    repo = R(":memory:")
+    repo.import_csv("nombre,estilo\nAna,Guion exacto\nBeto,natural\nCaro,\n")
+    assert [c.script_style for c in repo.list()] == ["guion", "natural", ""]

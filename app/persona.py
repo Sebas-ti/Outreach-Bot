@@ -66,6 +66,20 @@ def infer_gender(first_name: str) -> str:
     return ""
 
 
+def normalize_style(value: str) -> str:
+    v = normalize_text(value or "").replace(" ", "")
+    if v in ("guion", "exacto", "estricto", "strict", "script", "guionexacto", "apegado"):
+        return "guion"
+    if v in ("natural", "libre", "flexible", "conversacional"):
+        return "natural"
+    return ""
+
+
+def script_style(c: Contact, s: Settings) -> str:
+    """'guion' = the client's Word phrases word for word; 'natural' = objectives, own words."""
+    return normalize_style(c.script_style) or normalize_style(s.script_style) or "natural"
+
+
 def contact_gender(c: Contact) -> str:
     return normalize_gender(c.gender) or infer_gender(c.first_name)
 

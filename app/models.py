@@ -42,7 +42,8 @@ class Contact:
     demo_scenario: str = ""
     language: str = ""  # es | en | pt (opening language)
     gender: str = ""  # f | m | '' (optional; inferred from the first name if empty)
-    stand_notes: str = ""  # what they saw/asked at the booth (Word: "si se tiene el dato")
+    stand_notes: str = ""
+    script_style: str = ""  # guion | natural | '' (default from settings)  # what they saw/asked at the booth (Word: "si se tiene el dato")
     status: Status = Status.PENDING
     call_id: str = ""
     call_summary: str = ""

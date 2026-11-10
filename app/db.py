@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .models import Contact, Status
-from .persona import normalize_gender, normalize_language
+from .persona import normalize_gender, normalize_language, normalize_style
 from .utils import normalize_url
 
 SCHEMA = """
@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS contacts (
     language TEXT DEFAULT '',
     gender TEXT DEFAULT '',
     stand_notes TEXT DEFAULT '',
+    script_style TEXT DEFAULT '',
     status TEXT NOT NULL DEFAULT 'PENDING',
     call_id TEXT DEFAULT '',
     call_summary TEXT DEFAULT '',
@@ -64,6 +65,7 @@ CSV_ALIASES = {
     "demo_scenario": ["escenario_demo", "demo_scenario"],
     "language": ["idioma", "language", "lang", "lengua"],
     "gender": ["genero", "género", "gender", "sexo"],
+    "script_style": ["estilo", "estilo_guion", "modo_guion", "style"],
     "stand_notes": ["notas_stand", "interes_stand", "interés_stand", "notas", "notes", "stand"],
 }
 
@@ -86,7 +88,8 @@ class Repository:
             cols = {r[1] for r in self._conn.execute("PRAGMA table_info(contacts)")}
             for col, ddl in [("ended_reason", "TEXT DEFAULT ''"), ("call_duration_s", "REAL DEFAULT 0"),
                              ("call_cost", "REAL DEFAULT 0"), ("language", "TEXT DEFAULT ''"),
-                             ("gender", "TEXT DEFAULT ''"), ("stand_notes", "TEXT DEFAULT ''")]:
+                             ("gender", "TEXT DEFAULT ''"), ("stand_notes", "TEXT DEFAULT ''"),
+                             ("script_style", "TEXT DEFAULT ''")]:
                 if col not in cols:  # migrate databases created by older versions
                     self._conn.execute(f"ALTER TABLE contacts ADD COLUMN {col} {ddl}")
             self._conn.commit()
@@ -141,6 +144,8 @@ class Repository:
                 values["language"] = normalize_language(values["language"])
             if "gender" in values:
                 values["gender"] = normalize_gender(values["gender"])
+            if "script_style" in values:
+                values["script_style"] = normalize_style(values["script_style"])
             self.add_contact(**values)
             count += 1
         return count

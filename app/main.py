@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from .config import Settings, get_settings
 from .conversation import ConversationTools
 from .db import Repository
-from .persona import SILENCE_NUDGES, agent_persona
+from .persona import SILENCE_NUDGES, agent_persona, script_style
 from .pipeline import Pipeline, mask
 from .providers.calendar import GoogleCalendarService, MockCalendarService
 from .providers.enrichment import MockEnricher, SignalHireEnricher, WaterfallEnricher, enrichment_key
@@ -79,11 +79,14 @@ HEARD: set[str] = set()  # call ids where the person has already spoken
 
 
 async def control(c: Container, call: dict, payload: dict) -> int | None:
-    """Send a live-control command (say / end-call) to an ongoing Vapi call. None if the call is over."""
-    live = await c.voice.fetch_call(call["id"])
-    if live.get("status") == "ended":
-        return None
-    url = (live.get("monitor") or call.get("monitor") or {}).get("controlUrl")
+    """Send a live-control command (say / end-call) to an ongoing Vapi call. None if the call is over.
+    Uses the controlUrl already in the webhook when present (asking Vapi first added ~3 s of delay)."""
+    url = (call.get("monitor") or {}).get("controlUrl")
+    if not url:
+        live = await c.voice.fetch_call(call["id"])
+        if live.get("status") == "ended":
+            return None
+        url = (live.get("monitor") or {}).get("controlUrl")
     if not url:
         log.warning("call %s has no controlUrl", call["id"])
         return None
@@ -100,6 +103,7 @@ async def silence_nudge(c: Container, call: dict, contact_id: int | None, langua
             await asyncio.sleep(c.s.silence_nudge_after_s)
             if call["id"] in HEARD:
                 return
+            HEARD.add(call["id"])  # from now on the agent has spoken: never stack another nudge on top
             status = await control(c, call, {"type": "say", "content": text})
             if status is None:
                 return
@@ -149,7 +153,8 @@ def create_app(settings: Settings | None = None, repo: Repository | None = None)
             d["phone"] = mask(c.phone)
             d["consent_phone"] = mask(c.consent_phone)
             p = agent_persona(c, C(request).s)
-            d.update(agent=p.name, agent_gender=p.gender, agent_language=p.language)
+            d.update(agent=p.name, agent_gender=p.gender, agent_language=p.language,
+                     style=script_style(c, C(request).s))
             out.append(d)
         return out
 
@@ -273,8 +278,16 @@ def create_app(settings: Settings | None = None, repo: Repository | None = None)
                 results.append({"toolCallId": tc.get("id"), "result": result})
             return {"results": results}
 
+        log.info("vapi webhook %s role=%s status=%s", mtype, msg.get("role"), msg.get("status"))
+        # In waits-for-user mode the agent only speaks after the person does, so ANY speech (or a user message
+        # in the conversation) means the call is alive: cancel the silence nudge.
         if mtype == "speech-update":
-            if msg.get("role") == "user" and call.get("id"):
+            if call.get("id"):
+                HEARD.add(call["id"])
+            return {}
+        if mtype == "conversation-update":
+            msgs = msg.get("conversation") or msg.get("messages") or []
+            if call.get("id") and any(m.get("role") == "user" for m in msgs if isinstance(m, dict)):
                 HEARD.add(call["id"])
             return {}
         if mtype == "status-update":

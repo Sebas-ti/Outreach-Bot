@@ -467,7 +467,7 @@ async function renderDrawer(force){
       <dt>Correo</dt><dd>${esc(c.email||"—")}</dd>
       <dt>Celular</dt><dd>${esc(c.phone||"—")} ${c.phone_source?`<span style="color:var(--muted)">· vía ${esc(c.phone_source)}</span>`:""}</dd>
       <dt>LinkedIn</dt><dd>${c.linkedin_url?`<a href="${esc(c.linkedin_url)}" target="_blank" rel="noopener">Ver perfil</a>${c.linkedin_confidence!=null?` <span class="tag">${Math.round(c.linkedin_confidence*100)}% coincidencia</span>`:` <span class="tag">proporcionado</span>`}`:"No encontrado"}</dd>
-      <dt>Agente</dt><dd>${esc(c.agent||"—")} <span style="color:var(--muted)">· voz ${c.agent_gender==="m"?"masculina":"femenina"} · abre en ${esc(LANG_NAMES[c.agent_language]||"español")}</span></dd>
+      <dt>Agente</dt><dd>${esc(c.agent||"—")} <span style="color:var(--muted)">· voz ${c.agent_gender==="m"?"masculina":"femenina"} · abre en ${esc(LANG_NAMES[c.agent_language]||"español")} · ${c.style==="guion"?"guion exacto":"conversación natural"}</span></dd>
       ${c.stand_notes?`<dt>Notas del stand</dt><dd>${esc(c.stand_notes)}</dd>`:""}
       ${c.call_id?`<dt>ID de llamada</dt><dd style="font-family:ui-monospace,Consolas,monospace;font-size:12px">${esc(c.call_id)}</dd>`:""}
     </dl></div>
