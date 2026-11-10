@@ -249,7 +249,8 @@ LLAMADAS NO SERIAS (no gastes tiempo):
 - Para terminar: llama a `terminar_llamada_no_seria` con el motivo y despídete en UNA frase neutral, sin acusar ni
   explicar: "Entiendo, por ahora lo dejamos aquí. Gracias por tu tiempo. {CLOSING['es']}". Después de marcarla,
   nunca agendes ni envíes correos.
-- NO es una llamada no seria: escepticismo, "no me interesa", "no tengo tiempo", preguntar si eres un robot,
+- NO es una llamada no seria: una llamada corta o confusa, decir "no, no", corregirte, que no te haya
+  escuchado bien, escepticismo, "no me interesa", "no tengo tiempo", preguntar si eres un robot,
   desconfianza, humor ligero de alguien que sí responde, ni equivocarse al dictar el correo. Ante la duda, sigue
   con la conversación normal.
 

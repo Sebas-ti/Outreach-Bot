@@ -313,7 +313,7 @@ def test_assistant_barge_in_multilingual_and_persona():
     assert multi["transcriber"]["language"] == "multi"
     assert multi["backgroundSpeechDenoisingPlan"]["smartDenoisingPlan"]["enabled"] is True
     assert build_assistant(contact(language="fr"), S)["transcriber"]["language"] == "fr"
-    assert "language" not in a["voice"]  # ElevenLabs infers the language from the text
+    assert "language" not in a["voice"]  # azure default voice: no language field
     assert a["endCallFunctionEnabled"] is False and "have a great day" in a["endCallPhrases"]
     prompt = a["model"]["messages"][0]["content"]
     assert a["firstMessage"].endswith("¿Hablo con Laura?")              # short greeting, waits for "¿Aló?"
@@ -452,7 +452,8 @@ def test_not_serious_call_is_flagged_blocks_actions_and_survives_outcome(tmp_pat
     r = asyncio.run(tools.dispatch("agendar_reunion", {"email": "a@b.co", "fecha_hora": slot.isoformat(), "tema": "ia"}, c.id))
     assert "no seria" in r and not cal.booked                       # nothing booked after flagging
     assert outcome_status(Status.NOT_SERIOUS, CallOutcome("x", "assistant-said-end-call-phrase")) == Status.NOT_SERIOUS
-    assert outcome_status(Status.CALLING, CallOutcome("x", structured={"resultado": "llamada_no_seria"})) == Status.NOT_SERIOUS
+    # the post-call analysis alone never marks a lead as not serious (false positive seen in a real test)
+    assert outcome_status(Status.CALLING, CallOutcome("x", structured={"resultado": "llamada_no_seria"})) == Status.CALL_DONE
 
 
 def test_assistant_has_not_serious_tool_prompt_and_live_control():
@@ -518,7 +519,8 @@ def test_meeting_with_additional_attendees(tmp_path, monkeypatch):
 
 def test_natural_voice_settings_and_speaks_first_fallback():
     a = build_assistant(contact(), Settings(_env_file=None, vapi_voice_provider="11labs"))
-    assert a["voice"]["stability"] == 0.4 and a["model"]["temperature"] == 0.7
+    assert a["voice"]["stability"] == 0.55 and a["model"]["temperature"] == 0.7
+    assert a["voice"]["language"] == "es"  # pinned to the contact's language: no accent/tone drift
     b = build_assistant(contact(), Settings(_env_file=None, vapi_first_message_mode="assistant-speaks-first"))
     assert b["firstMessageMode"] == "assistant-speaks-first"
 
@@ -536,6 +538,7 @@ def test_silence_nudge_only_when_nobody_speaks(monkeypatch):
 
     monkeypatch.setattr(main, "control", fake_control)
     s = Settings(_env_file=None, silence_nudge_after_s=0.01)
+    assert Settings(_env_file=None).silence_nudge_after_s == 0  # off by default
     c = types.SimpleNamespace(s=s, repo=types.SimpleNamespace(log=lambda *a: None))
     asyncio.run(main.silence_nudge(c, {"id": "quiet"}, 1, "es"))
     assert said == ["¿Aló? ¿Me escuchas?"]  # a single nudge: never stacked on top of the greeting

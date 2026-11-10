@@ -55,9 +55,9 @@ def build_voice(s: Settings, p: Persona | None = None) -> dict[str, Any]:
         voice["model"] = s.vapi_voice_model
     if s.vapi_voice_provider == "11labs":
         voice.update(stability=s.vapi_voice_stability, similarityBoost=s.vapi_voice_similarity)
-    # Forcing a language would make the voice read English/Portuguese text with Spanish rules, so in
-    # multilingual mode ElevenLabs infers it from the text; otherwise pin the opening language.
-    if s.vapi_voice_provider in ("11labs", "cartesia") and not s.vapi_multilingual:
+    # Pin the voice to the contact's language (consistent accent and tone). Only when the transcriber runs in
+    # "multi" mode (mid-call language switching) is it left for ElevenLabs to infer from the text.
+    if s.vapi_voice_provider in ("11labs", "cartesia") and not s.vapi_transcriber_multi:
         voice["language"] = p.language if p else "es"
     return voice
 
@@ -112,7 +112,7 @@ def build_assistant(contact: Contact, s: Settings) -> dict[str, Any]:
         # if nobody talks, the agent re-engages instead of silently hanging up
         "messagePlan": {
             "idleMessages": IDLE_MESSAGES.get(lang, IDLE_MESSAGES["es"]),
-            "idleTimeoutSeconds": 7,
+            "idleTimeoutSeconds": 10,  # 7 s fired "¿Sigues ahí?" while the person was still answering
             "idleMessageMaxSpokenCount": 3,
         },
         # barge-in: the agent stops when the person says `vapi_stop_num_words` transcribed words (not on any

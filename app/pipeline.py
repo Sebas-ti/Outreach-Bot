@@ -43,8 +43,8 @@ def outcome_status(current: Status, outcome: CallOutcome) -> Status:
     if any(r in reason for r in NO_ANSWER_REASONS):
         return Status.NO_ANSWER
     resultado = (outcome.structured or {}).get("resultado", "")
-    if resultado == "llamada_no_seria":
-        return Status.NOT_SERIOUS
+    # "llamada_no_seria" from the post-call analysis is NOT trusted on its own: a short, confused call was
+    # labelled that way. Only the agent's live decision (tool terminar_llamada_no_seria) marks NOT_SERIOUS.
     if resultado in ("no_por_ahora", "no_contactar"):
         return Status.NOT_INTERESTED
     return Status.CALL_DONE

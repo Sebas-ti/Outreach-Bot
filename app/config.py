@@ -60,14 +60,15 @@ class Settings(BaseSettings):
     # instant they pick up). assistant-speaks-first restores the previous behaviour.
     vapi_first_message_mode: str = "assistant-waits-for-user"
     # If nobody says anything after picking up, the server makes the agent say "¿Aló?" (Vapi's idle messages
-    # only start after the first exchange). Seconds of silence before each nudge; 0 disables it.
-    silence_nudge_after_s: float = 5
+    # only start after the first exchange). OFF by default: Vapi reports "the person spoke" ~1 s late, so a
+    # nudge could overlap a real "¿Aló?" (seen in tests). Seconds of silence before the nudge; 0 disables it.
+    silence_nudge_after_s: float = 0
     silence_nudge_max: int = 1
     vapi_temperature: float = 0.7  # natural style: some variety in wording so it doesn't sound recited
     vapi_temperature_strict: float = 0.3  # "guion" style: say the client's phrases word for word
     script_style: str = "natural"  # natural | guion  (per contact: column "estilo" in the CSV/Excel)
     # ElevenLabs: lower stability = more expressive, less monotone delivery
-    vapi_voice_stability: float = 0.4
+    vapi_voice_stability: float = 0.55  # 0.4 sounded expressive but changed tone abruptly
     vapi_voice_similarity: float = 0.8
     call_timeout_s: int = 600
     mock_call_delay_s: float = 1.5
