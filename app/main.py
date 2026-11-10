@@ -12,7 +12,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from .config import Settings, get_settings
 from .conversation import ConversationTools
 from .db import Repository
-from .persona import agent_persona
+from .persona import SILENCE_NUDGES, agent_persona
 from .pipeline import Pipeline, mask
 from .providers.calendar import GoogleCalendarService, MockCalendarService
 from .providers.enrichment import MockEnricher, SignalHireEnricher, WaterfallEnricher, enrichment_key
@@ -68,18 +68,50 @@ async def end_call_later(c: Container, call: dict, contact_id: int) -> None:
     if not isinstance(c.voice, VapiVoiceProvider) or not call.get("id"):
         return
     try:
-        live = await c.voice.fetch_call(call["id"])
-        if live.get("status") == "ended":
-            return
-        url = (live.get("monitor") or call.get("monitor") or {}).get("controlUrl")
-        if not url:
-            log.warning("call %s has no controlUrl; cannot force hang-up", call["id"])
-            return
-        async with httpx.AsyncClient(timeout=10) as client:
-            r = await client.post(url, json={"type": "end-call"})
-        c.repo.log(contact_id, "call", f"Llamada no seria: colgada por el sistema (HTTP {r.status_code})")
+        status = await control(c, call, {"type": "end-call"})
+        if status is not None:
+            c.repo.log(contact_id, "call", f"Llamada no seria: colgada por el sistema (HTTP {status})")
     except Exception as e:  # never let the backstop crash the server
         log.warning("forced hang-up of %s failed: %s", call.get("id"), e)
+
+
+HEARD: set[str] = set()  # call ids where the person has already spoken
+
+
+async def control(c: Container, call: dict, payload: dict) -> int | None:
+    """Send a live-control command (say / end-call) to an ongoing Vapi call. None if the call is over."""
+    live = await c.voice.fetch_call(call["id"])
+    if live.get("status") == "ended":
+        return None
+    url = (live.get("monitor") or call.get("monitor") or {}).get("controlUrl")
+    if not url:
+        log.warning("call %s has no controlUrl", call["id"])
+        return None
+    async with httpx.AsyncClient(timeout=10) as client:
+        r = await client.post(url, json=payload)
+    return r.status_code
+
+
+async def silence_nudge(c: Container, call: dict, contact_id: int | None, language: str) -> None:
+    """The agent waits for the person's "¿Aló?". If they pick up and say nothing, nudge like a human would."""
+    nudges = SILENCE_NUDGES.get(language, SILENCE_NUDGES["es"])[: c.s.silence_nudge_max]
+    try:
+        for text in nudges:
+            await asyncio.sleep(c.s.silence_nudge_after_s)
+            if call["id"] in HEARD:
+                return
+            status = await control(c, call, {"type": "say", "content": text})
+            if status is None:
+                return
+            c.repo.log(contact_id, "call", f"Silencio al contestar → el agente dijo: {text} (HTTP {status})")
+    except Exception as e:  # never let the nudge crash the server
+        log.warning("silence nudge for %s failed: %s", call.get("id"), e)
+
+
+def spawn(coro) -> None:
+    task = asyncio.create_task(coro)
+    BACKGROUND.add(task)
+    task.add_done_callback(BACKGROUND.discard)
 
 
 def create_app(settings: Settings | None = None, repo: Repository | None = None) -> FastAPI:
@@ -233,9 +265,7 @@ def create_app(settings: Settings | None = None, repo: Repository | None = None)
                         raise LookupError(f"llamada {call.get('id')} sin contacto asociado")
                     result = await c.tools.dispatch(fn.get("name", ""), args, int(contact_id))
                     if fn.get("name") == "terminar_llamada_no_seria" and result.startswith("Registrado"):
-                        task = asyncio.create_task(end_call_later(c, call, int(contact_id)))
-                        BACKGROUND.add(task)
-                        task.add_done_callback(BACKGROUND.discard)
+                        spawn(end_call_later(c, call, int(contact_id)))
                 except (LookupError, ValueError) as e:  # never answer 500 to Vapi in the middle of a call
                     log.warning("tool-call %s not dispatched: %s", fn.get("name"), e)
                     result = ("Hubo un problema técnico. Dile a la persona que el equipo le confirmará por correo "
@@ -243,9 +273,19 @@ def create_app(settings: Settings | None = None, repo: Repository | None = None)
                 results.append({"toolCallId": tc.get("id"), "result": result})
             return {"results": results}
 
+        if mtype == "speech-update":
+            if msg.get("role") == "user" and call.get("id"):
+                HEARD.add(call["id"])
+            return {}
         if mtype == "status-update":
             c.repo.log(contact_id, "call", f"Vapi status: {msg.get('status')}")
+            if (msg.get("status") == "in-progress" and call.get("id") and c.s.silence_nudge_after_s > 0
+                    and c.s.vapi_first_message_mode == "assistant-waits-for-user"
+                    and isinstance(c.voice, VapiVoiceProvider)):
+                lang = agent_persona(contact, c.s).language if contact else "es"
+                spawn(silence_nudge(c, call, contact_id, lang))
         elif mtype == "end-of-call-report":
+            HEARD.discard(call.get("id", ""))
             outcome = parse_end_of_call(msg)
             c.registry.resolve(f"call:{outcome.call_id}", outcome)
         return {}

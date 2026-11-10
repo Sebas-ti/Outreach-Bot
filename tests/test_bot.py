@@ -517,3 +517,30 @@ def test_natural_voice_settings_and_speaks_first_fallback():
     assert a["voice"]["stability"] == 0.4 and a["model"]["temperature"] == 0.7
     b = build_assistant(contact(), Settings(_env_file=None, vapi_first_message_mode="assistant-speaks-first"))
     assert b["firstMessageMode"] == "assistant-speaks-first"
+
+
+# ---------------- silence after picking up
+def test_silence_nudge_only_when_nobody_speaks(monkeypatch):
+    import types
+    from app import main
+
+    said = []
+
+    async def fake_control(c, call, payload):
+        said.append(payload["content"])
+        return 200
+
+    monkeypatch.setattr(main, "control", fake_control)
+    s = Settings(_env_file=None, silence_nudge_after_s=0.01)
+    c = types.SimpleNamespace(s=s, repo=types.SimpleNamespace(log=lambda *a: None))
+    asyncio.run(main.silence_nudge(c, {"id": "quiet"}, 1, "es"))
+    assert said == ["¿Aló? ¿Me escuchas?", "¿Aló? Creo que no te escucho bien."]
+    said.clear()
+    main.HEARD.add("talked")
+    asyncio.run(main.silence_nudge(c, {"id": "talked"}, 1, "fr"))
+    assert said == []
+    main.HEARD.discard("talked")
+
+
+def test_assistant_listens_for_speech_updates():
+    assert "speech-update" in build_assistant(contact(), S)["serverMessages"]

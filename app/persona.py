@@ -132,6 +132,14 @@ IDLE_MESSAGES = {
     "fr": ["Vous êtes toujours là ?", "Vous m'entendez bien ?", "Pardon, je n'ai pas bien entendu, pouvez-vous répéter ?"],
 }
 
+# Said by the server when the person picks up and stays silent (waits-for-user mode)
+SILENCE_NUDGES = {
+    "es": ["¿Aló? ¿Me escuchas?", "¿Aló? Creo que no te escucho bien."],
+    "en": ["Hello? Can you hear me?", "Hello? I think I can't hear you well."],
+    "pt": ["Alô? Está me ouvindo?", "Alô? Acho que não estou te ouvindo bem."],
+    "fr": ["Allô ? Vous m'entendez ?", "Allô ? Je crois que je ne vous entends pas bien."],
+}
+
 # Backchannel words that must NOT cut the agent off, and words that always should.
 # Kept minimal on purpose: "claro", "ok" or "sí" are often real answers and must stop the agent.
 ACKNOWLEDGEMENT_PHRASES = ["ajá", "aja", "mjm", "mm-hmm", "uh-huh", "uhum", "mmh"]

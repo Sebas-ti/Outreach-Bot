@@ -133,7 +133,8 @@ def build_assistant(contact: Contact, s: Settings) -> dict[str, Any]:
         "monitorPlan": {"controlEnabled": True},
         "silenceTimeoutSeconds": 45,
         "server": server,
-        "serverMessages": ["end-of-call-report", "status-update", "tool-calls"],
+        # speech-update: lets the server know whether the person has said anything yet (silence nudge)
+        "serverMessages": ["end-of-call-report", "status-update", "tool-calls", "speech-update"],
         "analysisPlan": {
             "summaryPlan": {"messages": [{"role": "system", "content":
                 "Resume en español, en 3 frases, la llamada de seguimiento: interés, proyecto y próximo paso."}]},
