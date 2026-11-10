@@ -50,6 +50,13 @@ class Settings(BaseSettings):
     vapi_transcriber_model: str = "nova-3"  # nova-3 + multi = Spanish/English/Portuguese in one call
     vapi_multilingual: bool = True  # the agent follows the language the person speaks (es/en/pt)
     vapi_wait_seconds: float = 0.3
+    # assistant-waits-for-user: like a human caller, let the person say "¿Aló?" first (instead of talking the
+    # instant they pick up). assistant-speaks-first restores the previous behaviour.
+    vapi_first_message_mode: str = "assistant-waits-for-user"
+    vapi_temperature: float = 0.7  # some variety in wording so it doesn't sound recited
+    # ElevenLabs: lower stability = more expressive, less monotone delivery
+    vapi_voice_stability: float = 0.4
+    vapi_voice_similarity: float = 0.8
     call_timeout_s: int = 600
     mock_call_delay_s: float = 1.5
 

@@ -312,9 +312,12 @@ def test_assistant_barge_in_multilingual_and_persona():
     assert "language" not in a["voice"]  # ElevenLabs infers the language from the text
     assert a["endCallFunctionEnabled"] is False and "have a great day" in a["endCallPhrases"]
     prompt = a["model"]["messages"][0]["content"]
-    assert "Soy Daniel" in a["firstMessage"] and "Eres HOMBRE" in prompt and "Laura es mujer" in prompt
+    assert a["firstMessage"].endswith("¿Hablo con Laura?")              # short greeting, waits for "¿Aló?"
+    assert a["firstMessageMode"] == "assistant-waits-for-user"
+    assert "Eres Daniel" in prompt and "Eres HOMBRE" in prompt and "Laura es mujer" in prompt
+    assert "asistente virtual" in prompt and "NO frases para recitar" in prompt
     en = build_assistant(contact(first_name="John", language="en"), S)
-    assert en["firstMessage"].startswith("Hi, am I speaking with John?")
+    assert en["firstMessage"].startswith("Hi, good") and en["firstMessage"].endswith("Is this John?")
     assert en["model"]["tools"][0]["messages"][0]["content"].startswith("One moment")
     mono = build_assistant(contact(), Settings(_env_file=None, vapi_multilingual=False, vapi_transcriber_model="nova-2",
                                                vapi_voice_provider="11labs"))
@@ -480,13 +483,11 @@ def test_french_contact_gets_french_opening_voice_and_closing():
     man = contact(first_name="Ambroise", language="francés")
     a = build_assistant(man, s)
     assert agent_persona(man, s).voice_id == "fr-f"  # man -> Sofía with a native French voice
-    assert a["firstMessage"].startswith("Bonjour, je suis bien avec Ambroise ?")
-    assert "assistante virtuelle" in a["firstMessage"] and "vous êtes passé nous" in a["firstMessage"]
+    assert a["firstMessage"].endswith("Je suis bien avec Ambroise ?")
     assert a["model"]["tools"][0]["messages"][0]["content"].startswith("Un instant")
     assert "une excellente journée" in a["endCallPhrases"]
     assert '"vous"' in a["model"]["messages"][0]["content"]
-    woman = build_assistant(contact(first_name="Claire", language="fr"), s)
-    assert "assistant virtuel" in woman["firstMessage"] and "passée" in woman["firstMessage"]
+    assert "Eres Daniel" in build_assistant(contact(first_name="Claire", language="fr"), s)["model"]["messages"][0]["content"]
     assert spoken_email("ab2@x.fr", "fr") == "a bé, deux, arobase, ixe, point, effe erre"
 
 
@@ -509,3 +510,10 @@ def test_meeting_with_additional_attendees(tmp_path, monkeypatch):
     assert repo.get(c.id).qualification["invitados"] == ["Carlos Ruiz <carlos@acme.com>", "lu@acme.com"]
     invite = next((tmp_path / "out").glob("invite_*.txt")).read_text(encoding="utf-8")
     assert "carlos@acme.com" in invite and "lu@acme.com" in invite
+
+
+def test_natural_voice_settings_and_speaks_first_fallback():
+    a = build_assistant(contact(), Settings(_env_file=None, vapi_voice_provider="11labs"))
+    assert a["voice"]["stability"] == 0.4 and a["model"]["temperature"] == 0.7
+    b = build_assistant(contact(), Settings(_env_file=None, vapi_first_message_mode="assistant-speaks-first"))
+    assert b["firstMessageMode"] == "assistant-speaks-first"

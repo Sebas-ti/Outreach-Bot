@@ -126,8 +126,8 @@ WAIT_MESSAGES = {
 }
 
 IDLE_MESSAGES = {
-    "es": ["¿Sigues ahí?", "¿Me escuchas bien?", "Perdón, creo que no te escuché, ¿me repites?"],
-    "en": ["Are you still there?", "Can you hear me okay?", "Sorry, I didn't catch that, could you repeat it?"],
+    "es": ["¿Aló? ¿Me escuchas?", "¿Sigues ahí?", "Perdón, creo que no te escuché, ¿me repites?"],
+    "en": ["Hello? Can you hear me?", "Are you still there?", "Sorry, I didn't catch that, could you repeat it?"],
     "pt": ["Você ainda está aí?", "Está me ouvindo bem?", "Desculpe, não ouvi, pode repetir?"],
     "fr": ["Vous êtes toujours là ?", "Vous m'entendez bien ?", "Pardon, je n'ai pas bien entendu, pouvez-vous répéter ?"],
 }
@@ -139,24 +139,25 @@ INTERRUPTION_PHRASES = ["espera", "espere", "un momento", "perdón", "perdona", 
                         "wait", "hold on", "sorry", "espera aí", "desculpa", "attendez", "excusez-moi", "un instant"]
 
 
+def _daypart(s: Settings) -> str:
+    from datetime import datetime
+    h = datetime.now(s.tz).hour
+    return "morning" if h < 12 else "afternoon" if h < 19 else "evening"
+
+
 def first_message(c: Contact, s: Settings, p: Persona) -> str:
+    """Just greet and confirm who answered, like a person would. Who we are and why we call comes in the
+    next turn (the prompt), so the first thing the person hears is not a recorded-sounding speech."""
+    part = _daypart(s)
     if p.language == "en":
-        return (f"Hi, am I speaking with {c.first_name}? This is {p.name}, a virtual assistant with the team that "
-                f"supports {s.company_name}. I'm calling because you visited us at {s.event_name_spoken}. "
-                f"Do you have a couple of minutes?")
-    if p.language == "fr":
-        role = "assistante virtuelle" if p.is_female else "assistant virtuel"  # agrees with the agent
-        visited = "passée" if p.contact_gender == "f" else "passé"  # agrees with the contact ("vous")
-        return (f"Bonjour, je suis bien avec {c.first_name} ? Ici {p.name}, {role} de l'équipe qui "
-                f"accompagne {s.company_name}. Je vous appelle car vous êtes {visited} nous voir à "
-                f"{s.event_name_spoken}. Auriez-vous deux minutes ?")
+        return f"Hi, good {part}! Is this {c.first_name}?"
     if p.language == "pt":
-        return (f"Olá, falo com {c.first_name}? Aqui é {p.name}, assistente virtual da equipe que apoia a "
-                f"{s.company_name}. Estou ligando porque você esteve com a gente no {s.event_name_spoken}. "
-                f"Você tem um minutinho?")
-    return (f"Hola, ¿hablo con {c.first_name}? Soy {p.name}, asistente virtual del equipo que "
-            f"apoya a {s.company_name}. Te contacto porque estuviste con nosotros en {s.event_name_spoken}. "
-            f"¿Tienes un par de minutos?")
+        greet = {"morning": "bom dia", "afternoon": "boa tarde", "evening": "boa noite"}[part]
+        return f"Olá, {greet}! Falo com {c.first_name}?"
+    if p.language == "fr":
+        return f"{'Bonsoir' if part == 'evening' else 'Bonjour'} ! Je suis bien avec {c.first_name} ?"
+    greet = {"morning": "buenos días", "afternoon": "buenas tardes", "evening": "buenas noches"}[part]
+    return f"Hola, {greet}. ¿Hablo con {c.first_name}?"
 
 
 def voicemail_message(c: Contact, s: Settings, p: Persona) -> str:

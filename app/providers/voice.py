@@ -53,6 +53,8 @@ def build_voice(s: Settings, p: Persona | None = None) -> dict[str, Any]:
     }
     if s.vapi_voice_model:
         voice["model"] = s.vapi_voice_model
+    if s.vapi_voice_provider == "11labs":
+        voice.update(stability=s.vapi_voice_stability, similarityBoost=s.vapi_voice_similarity)
     # Forcing a language would make the voice read English/Portuguese text with Spanish rules, so in
     # multilingual mode ElevenLabs infers it from the text; otherwise pin the opening language.
     if s.vapi_voice_provider in ("11labs", "cartesia") and not s.vapi_multilingual:
@@ -89,13 +91,13 @@ def build_assistant(contact: Contact, s: Settings) -> dict[str, Any]:
     return {
         "name": f"Seguimiento {s.event_name}"[:40],
         "firstMessage": first_message(contact, s, persona),
-        "firstMessageMode": "assistant-speaks-first",
+        "firstMessageMode": s.vapi_first_message_mode,
         # Vapi's default is False: the person could not cut the (long) greeting -> "it keeps talking"
         "firstMessageInterruptionsEnabled": True,
         "model": {
             "provider": s.vapi_model_provider,
             "model": s.vapi_model,
-            "temperature": 0.4,
+            "temperature": s.vapi_temperature,
             "messages": [{"role": "system", "content": system_prompt(contact, s, datetime.now(s.tz), persona)}],
             "tools": tools,
         },
