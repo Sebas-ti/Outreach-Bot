@@ -573,3 +573,19 @@ def test_two_script_styles_strict_word_for_word_and_natural():
 def test_prompt_asks_to_repeat_instead_of_guessing_garbled_transcripts():
     prompt = build_assistant(contact(), S)["model"]["messages"][0]["content"]
     assert "transcripción automática" in prompt and "¿me repites?" in prompt
+
+
+def test_run_only_one_pending_contact_leaves_the_others_pending(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "data").mkdir()
+    repo = Repository(":memory:")
+    a = repo.add_contact(first_name="Ana", last_name="Uno", company="Acme", email="ana@example.com",
+                         consent_phone="3001112233")
+    b = repo.add_contact(first_name="Beto", last_name="Dos", company="Acme", consent_phone="3001112244")
+    with TestClient(create_app(S, repo)) as client:
+        assert client.post(f"/api/contacts/{a.id}/retry").json()["started"]
+        for _ in range(100):
+            time.sleep(0.05)
+            if not client.get("/api/status").json()["running"]:
+                break
+    assert repo.get(a.id).status != Status.PENDING and repo.get(b.id).status == Status.PENDING

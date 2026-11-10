@@ -446,13 +446,13 @@ async function renderDrawer(force){
   const [lbl,cls] = STATUS[c.status]||[c.status,"b-gray"];
   $("#dh").innerHTML = `<span class="av" style="background:${color(c)}">${esc(initials(c))}</span><div><h3>${esc(c.first_name)} ${esc(c.last_name)}</h3>
     <p>${esc(c.title||"—")} · ${esc(c.company||"sin empresa")}</p><div style="margin-top:6px"><span class="badge ${cls}">${lbl}</span></div></div>
-    <button class="btn x" id="retry" title="Vuelve a correr solo este contacto (búsqueda, enriquecimiento y llamada) sin tocar el resto del lote">${ico("reset")}Reintentar</button>
+    <button class="btn x" id="retry" title="Corre solo este contacto (búsqueda, enriquecimiento y llamada) sin tocar el resto del lote">${c.status==="PENDING"?`${ico("play")}Ejecutar solo este`:`${ico("reset")}Reintentar`}</button>
     <button class="icon-btn" id="close">${ico("x")}</button>`;
   $("#close").onclick = closeDrawer;
-  const rb = $("#retry"); rb.disabled = $("#run").disabled || c.status === "PENDING";
+  const rb = $("#retry"); rb.disabled = $("#run").disabled || ["SEARCHING_LINKEDIN","ENRICHING","CALLING"].includes(c.status);
   rb.onclick = async () => {
     rb.disabled = true;
-    try { await api(`/api/contacts/${c.id}/retry`, {method:"POST"}); toast(`Reintentando a ${c.first_name}`); refresh(); }
+    try { await api(`/api/contacts/${c.id}/retry`, {method:"POST"}); toast(`Procesando solo a ${c.first_name}`); refresh(); }
     catch (e) { toast(e.message); rb.disabled = false; }
   };
   const d = c.meeting_start ? new Date(c.meeting_start) : null;
