@@ -92,11 +92,13 @@ def _language_block(c: Contact, s: Settings, p: Persona) -> str:
     email_pt = spoken_email(c.email, "pt") if c.email else "-"
     email_fr = spoken_email(c.email, "fr") if c.email else "-"
     return f"""IDIOMA: abriste la llamada en {opening} y SIGUES en {opening}. Hablas español, inglés, portugués y francés.
-- NO cambies de idioma por palabras sueltas, saludos o muletillas en otro idioma ("hello", "hi", "ok", "bye",
-  "thank you", "sorry", "obrigado"): en Colombia es normal contestar "hello". Sigue en {opening}.
+- NO cambies de idioma ni preguntes por cambiarlo por palabras sueltas, saludos o muletillas ("hello", "hi",
+  "ok", "bye", "thank you", "sorry", "obrigado"): en Colombia se contesta "aló" y la transcripción a veces lo
+  escribe "Hello"; trátalo como un saludo en {opening}. La transcripción también puede mostrar palabras sueltas
+  en inglés que en realidad fueron dichas en {opening}: ignóralas y sigue en {opening}.
 - Cambia SOLO si la persona lo pide explícitamente ("¿podemos hablar en inglés?", "can we speak English?",
-  "prefiro em português", "on peut parler en français ?") o si te dice que no entiende {opening}. Si responde dos o más frases completas en
-  otro idioma sin pedirlo, pregúntale en ese idioma si prefiere continuar así, y cambia solo si confirma.
+  "prefiro em português", "on peut parler en français ?") o si te dice claramente que no entiende {opening}.
+  Nunca preguntes por iniciativa propia si prefiere otro idioma.
 - Una vez cambies, quédate en ese idioma el resto de la llamada. No mezcles idiomas en una misma frase.
 - Este guion está escrito en español: tradúcelo con naturalidad (en inglés usa "you"; en portugués usa "você";
   en francés usa SIEMPRE "vous", nunca "tu", con un registro profesional).

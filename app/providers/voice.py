@@ -62,14 +62,22 @@ def build_voice(s: Settings, p: Persona | None = None) -> dict[str, Any]:
     return voice
 
 
-def build_transcriber(s: Settings, p: Persona | None = None) -> dict[str, Any]:
-    terms = [s.brand_name, s.event_name_spoken]
+def build_transcriber(s: Settings, p: Persona | None = None, c: Contact | None = None) -> dict[str, Any]:
+    # "aló" is how Colombians answer the phone: without the hint Deepgram writes "Hello?" and the agent
+    # thought the person spoke English. Names and companies are boosted so they're spelled right.
+    terms = [s.brand_name, s.event_name_spoken, "aló", s.company_name, p.name if p else s.agent_name]
+    if c:
+        terms += [c.first_name, c.company]
+    terms = list(dict.fromkeys(t for t in terms if t))
+    lang = p.language if p else "es"
+    if lang == "es" and s.vapi_transcriber_spanish:
+        lang = s.vapi_transcriber_spanish
     tr: dict[str, Any] = {"provider": "deepgram", "model": s.vapi_transcriber_model,
-                          "language": "multi" if s.vapi_transcriber_multi else (p.language if p else "es")}
+                          "language": "multi" if s.vapi_transcriber_multi else lang}
     if s.vapi_transcriber_model.startswith("nova-3"):
         tr["keyterm"] = terms  # nova-3: keyterm prompting (plain strings)
     else:
-        tr["keywords"] = [f"{w}:2" for w in terms]  # nova-2: single words with boost
+        tr["keywords"] = [f"{w}:2" for t_ in terms for w in t_.split()]  # nova-2: single words with boost
     return tr
 
 
@@ -102,7 +110,7 @@ def build_assistant(contact: Contact, s: Settings) -> dict[str, Any]:
             "tools": tools,
         },
         "voice": build_voice(s, persona),
-        "transcriber": build_transcriber(s, persona),
+        "transcriber": build_transcriber(s, persona, contact),
         # latency: answer quickly after the person stops talking (default no-punctuation wait is 1.5s)
         "startSpeakingPlan": {
             "waitSeconds": s.vapi_wait_seconds,

@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     # Deepgram "multi" guesses the language of every phrase: with a soft voice it wrote Spanish as English
     # ("And, David", "Yes, period"). Default: transcribe only the contact's language (much more accurate).
     vapi_transcriber_multi: bool = False
+    # Spanish variant for the transcriber: es-419 (Latin American) understands Colombian speech better than "es"
+    vapi_transcriber_spanish: str = "es-419"
     # Krisp noise suppression can erase a soft voice; background voices are already handled by
     # VAPI_STOP_NUM_WORDS (2 words to interrupt). Turn on only in very noisy environments.
     vapi_denoise: bool = False

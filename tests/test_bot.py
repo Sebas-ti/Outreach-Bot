@@ -308,7 +308,8 @@ def test_assistant_barge_in_multilingual_and_persona():
     assert a["stopSpeakingPlan"]["numWords"] == 2  # background voices must not cut the agent
     assert "pero" not in a["stopSpeakingPlan"]["interruptionPhrases"]
     assert a["backgroundSpeechDenoisingPlan"]["smartDenoisingPlan"]["enabled"] is False  # keeps soft voices
-    assert a["transcriber"]["language"] == "es" and "keyterm" in a["transcriber"]  # only the contact's language
+    assert a["transcriber"]["language"] == "es-419" and "keyterm" in a["transcriber"]  # Latin American Spanish
+    assert {"aló", "Laura", "Banco Andino"} <= set(a["transcriber"]["keyterm"])  # "aló" is not "Hello?"
     multi = build_assistant(contact(), Settings(_env_file=None, vapi_transcriber_multi=True, vapi_denoise=True))
     assert multi["transcriber"]["language"] == "multi"
     assert multi["backgroundSpeechDenoisingPlan"]["smartDenoisingPlan"]["enabled"] is True
@@ -325,7 +326,7 @@ def test_assistant_barge_in_multilingual_and_persona():
     assert en["model"]["tools"][0]["messages"][0]["content"].startswith("One moment")
     mono = build_assistant(contact(), Settings(_env_file=None, vapi_multilingual=False, vapi_transcriber_model="nova-2",
                                                vapi_voice_provider="11labs"))
-    assert mono["transcriber"]["language"] == "es" and "keywords" in mono["transcriber"]
+    assert mono["transcriber"]["language"] == "es-419" and "Banco:2" in mono["transcriber"]["keywords"]
     assert mono["voice"]["language"] == "es"
 
 
@@ -433,6 +434,7 @@ def test_language_switch_needs_explicit_request_and_english_gets_native_voice():
     assert agent_persona(contact(first_name="Ana", language="pt"), s).voice_id == "es-m"    # no pt voice -> fallback
     prompt = build_assistant(contact(first_name="Andrés"), s)["model"]["messages"][0]["content"]
     assert '"hello"' in prompt and "SOLO si la persona lo pide" in prompt
+    assert "Nunca preguntes por iniciativa propia" in prompt
 
 
 # ---------------- prank / abusive calls
